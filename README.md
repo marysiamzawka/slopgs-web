@@ -10,6 +10,8 @@ I built this by exclusively iterating with Claude. I wrote no line of code.
 
 Drag a `.mid` file onto the page; it plays back through [slopgs](https://github.com/sloptainment/slopgs), a reimplementation of the Windows MSGS (`swmidi.sys`) wavetable synth. The point isn't a generic MIDI player -- it's that specific, recognizable classic-Windows sound, faithfully reproduced in the browser.
 
+![slopgs player: a falling-note piano roll next to a channel list, playing a MIDI Massacre](docs/screenshot.png)
+
 **Live demo:** https://wwwdobryrap.pl/slopgs-web/
 
 ## Quick start
