@@ -742,6 +742,11 @@ button {
   letter-spacing: 0.14em;
   color: var(--text-faint);
 }
+.sidebar__title-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
 
 .sidebar__reset {
   flex: none;
@@ -797,44 +802,52 @@ button {
   opacity: 0.32;
 }
 
+/* The name/patch/mute/solo line gets its own lighter chip background --
+ * now that the meters and voice squares below use the row's full width
+ * (see .channel-row__meter and .channel-row__voices just below) instead
+ * of an indent that happened to line up with where the patch name starts,
+ * that indent no longer does double duty as the visual seam between
+ * "channel identity" and "live meters." The tint does that job explicitly
+ * instead. */
 .channel-row__main {
   display: grid;
-  grid-template-columns: 8px 3.4rem 1fr 1.3rem 1.3rem;
+  grid-template-columns: 10px 3.6rem 1fr 1.4rem 1.4rem 1.3rem;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 3px;
+  background: var(--panel-raised);
 }
 
 .drum-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
-  margin-top: 0.4rem;
-  padding-left: calc(8px + 3.4rem + 0.45rem * 2);
+  gap: 0.35rem;
+  margin-top: 0.45rem;
 }
 
 /* Per-channel voice count, live -- concurrently-sounding notes on that
  * channel right now, same idea as the sidebar's global VOICES meter but
  * per row and coarse (small lit squares, not a number) so it reads at a
- * glance without competing with the patch name for attention. Its own row
- * below the meter stack, indented to align under the patch name (same
- * convention as .drum-grid and .channel-row__meter) -- packed into the
- * name/mute/solo line as another column, it and a long patch name would
- * clip each other. Skipped entirely for the drum channel, whose per-key
- * grid already covers this. */
+ * glance without competing with the patch name for attention. Skipped
+ * entirely for the drum channel, whose per-key grid already covers this. */
 .channel-row__voices {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-top: 0.35rem;
-  padding-left: calc(8px + 3.4rem + 0.45rem * 2);
+  margin-top: 0.4rem;
+  overflow: hidden; /* clips whatever doesn't fit past the last whole square -- see populateVoiceSquares in app.js */
 }
 /* Fixed-size squares -- more of them is what reads as finer resolution;
  * stretching a handful of squares to fill the row just makes fatter
- * squares, not a more precise meter. */
+ * squares, not a more precise meter. app.js measures the row and builds
+ * exactly as many as actually fit edge to edge (see populateVoiceSquares/
+ * computeVoiceSquareCount) rather than a guessed fixed count -- these two
+ * values are that same math mirrored for CSS's own sizing. */
 .voice-sq {
   flex: none;
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 1px;
   background: var(--bg);
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
@@ -845,29 +858,45 @@ button {
 }
 .channel-row__voices-overflow {
   flex: none;
-  margin-left: 1px;
+  margin-left: 2px;
   font-family: var(--font-mono);
-  font-size: 0.58rem;
+  font-size: 0.68rem;
   color: var(--text-faint);
 }
 
-/* Volume/pan/pitch, one "icon [======bar======]" row each -- same indent
- * and width as the voice squares below them (calc(8px + 3.4rem +
- * 0.45rem*2), the drum-grid/voices convention), so the whole sub-info
- * stack under the name/mute/solo line shares one left edge and one right
- * edge instead of each row picking its own width. */
+/* Volume/pan/pitch. Collapsed (default): all three share one row, each
+ * getting an equal third -- see .channel-row__expand-btn, which toggles
+ * --expanded on this wrapper. Expanded: one full-width row each, stacked.
+ * Either way they span the row's actual full width now, not indented to
+ * line up with the patch name -- see .channel-row__main's own comment for
+ * why that indent went away. */
+.channel-row__meters {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+.channel-row__meters--expanded {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
+}
 .channel-row__meter {
   display: flex;
   align-items: center;
-  gap: 0.3rem;
-  margin-top: 0.3rem;
-  padding-left: calc(8px + 3.4rem + 0.45rem * 2);
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+.channel-row__meters--expanded .channel-row__meter {
+  flex: none;
 }
 .channel-row__meter-icon {
   flex: none;
-  width: 1rem;
+  width: 1.3rem;
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: 0.85rem;
   line-height: 1;
   text-align: center;
   color: var(--text-faint);
@@ -875,7 +904,8 @@ button {
 .channel-row__meter-bar {
   position: relative;
   flex: 1;
-  height: 5px;
+  min-width: 0;
+  height: 8px;
   border-radius: 1px;
   background: var(--bg);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
@@ -916,17 +946,44 @@ button {
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 0.52rem;
+  font-size: 0.62rem;
   letter-spacing: 0.02em;
   color: var(--text-faint);
   pointer-events: none;
 }
 
+/* The "v" in the main row -- toggles just this row between the collapsed
+ * (default) and expanded meter layouts above. Text content swaps ▾/▴ in
+ * app.js rather than a CSS rotate transform, so it never has to fight the
+ * per-row reduced-motion story this file doesn't otherwise have to think
+ * about for something this small. */
+.channel-row__expand-btn {
+  flex: none;
+  width: 1.3rem;
+  height: 1.3rem;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.channel-row__expand-btn:hover {
+  color: var(--text);
+  background: var(--bg);
+}
+.channel-row__expand-btn:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
 .drum-grid__chip {
   flex: none;
-  padding: 0.12rem 0.3rem;
+  padding: 0.16rem 0.36rem;
   font-family: var(--font-mono);
-  font-size: 0.62rem;
+  font-size: 0.72rem;
   letter-spacing: 0.02em;
   color: var(--text-faint);
   background: var(--bg);
@@ -946,20 +1003,20 @@ button {
  * swatch doubling as a live level meter. */
 .channel-row__dot {
   flex: none;
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.35);
 }
 
 .channel-row__num {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   color: var(--text-dim);
 }
 
 .channel-row__patch {
-  font-size: 0.82rem;
+  font-size: 0.95rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -967,14 +1024,14 @@ button {
 
 .channel-row__btn {
   flex: none;
-  width: 1.3rem;
-  height: 1.3rem;
+  width: 1.4rem;
+  height: 1.4rem;
   display: grid;
   place-items: center;
   border: none;
   border-radius: 2px;
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-faint);
   background: var(--bg);
@@ -1324,9 +1381,10 @@ button {
    * reliably. Bumped only at this breakpoint so the desktop cockpit
    * density is untouched. */
   .channel-row__main {
-    grid-template-columns: 8px 3.4rem 1fr 2.75rem 2.75rem;
+    grid-template-columns: 10px 3.6rem 1fr 2.75rem 2.75rem 2.75rem;
   }
-  .channel-row__btn {
+  .channel-row__btn,
+  .channel-row__expand-btn {
     width: 2.75rem;
     height: 2.75rem;
   }

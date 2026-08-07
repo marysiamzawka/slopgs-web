@@ -52,6 +52,7 @@
   const autoplayPrompt = document.getElementById("autoplayPrompt");
   const loadingIndicator = document.getElementById("loadingIndicator");
   const resetMuteSoloBtn = document.getElementById("resetMuteSoloBtn");
+  const expandAllBtn = document.getElementById("expandAllBtn");
 
   const roll = new window.SlopgsPianoRoll(rollCanvas);
   const synth = new window.SlopgsSynth({ wasmUrl: "msgs.wasm", dlsUrl: "gm.dls" });
@@ -102,6 +103,7 @@
     exportFormat.disabled = !enabled;
     exportBtn.disabled = !enabled;
     resetMuteSoloBtn.disabled = !enabled;
+    expandAllBtn.disabled = !enabled;
   }
 
   function setPlayingUI(playing) {
@@ -346,6 +348,12 @@
 
   function buildChannelList(data) {
     channelList.innerHTML = "";
+    // Every rebuilt row starts collapsed (styles.css's own default) --
+    // keep the bulk toggle's own state and label in sync with that, or a
+    // stale "Collapse all" could sit there claiming a state the fresh rows
+    // aren't actually in.
+    allRowsExpanded = false;
+    expandAllBtn.textContent = "Expand all";
     perChannelNotes = new Map();
     perDrumKeyNotes = new Map();
     for (const ch of data.channelsUsed) {
@@ -379,6 +387,7 @@
       const patch = document.createElement("span");
       patch.className = "channel-row__patch";
       patch.textContent = gmInstrumentName(0, ch === 9);
+      patch.title = patch.textContent; // full name on hover -- bigger text (per the brief) means more names truncate
 
       const muteBtn = document.createElement("button");
       muteBtn.type = "button";
@@ -404,21 +413,32 @@
         applyMuteSolo();
       });
 
-      main.append(dot, num, patch, muteBtn, soloBtn);
+      // Volume/pan/pitch default to one shared row (see .channel-row__meters
+      // in styles.css) -- this button swaps that row to three full-width
+      // ones stacked instead, per-channel. expandAllBtn below does the same
+      // thing in bulk.
+      const expandBtn = document.createElement("button");
+      expandBtn.type = "button";
+      expandBtn.className = "channel-row__expand-btn";
+      expandBtn.textContent = "▾";
+      expandBtn.setAttribute("aria-expanded", "false");
+      expandBtn.setAttribute("aria-label", "Expand channel meters");
+      expandBtn.addEventListener("click", () => setRowExpanded(li, !isRowExpanded(li)));
+
+      main.append(dot, num, patch, muteBtn, soloBtn, expandBtn);
       li.appendChild(main);
 
-      // Live volume/pan/pitch, one horizontal bar each, same width and
-      // indent as the voice squares below (see buildMeterRow) -- narrower
-      // than that (e.g. squeezed under just the dot+CH-xx column, as pan
-      // alone used to be) didn't leave enough room to actually read a
-      // bipolar deviation at a glance. Pan and pitch fill from a center
-      // tick and swap in a plain-language label ("LR", "+0") when they're
-      // sitting dead at their default instead of showing a zero-width sliver.
-      li.append(
+      // Live volume/pan/pitch. Pan and pitch fill from a center tick and
+      // swap in a plain-language label ("LR", "+0") when they're sitting
+      // dead at their default instead of showing a zero-width sliver.
+      const meters = document.createElement("div");
+      meters.className = "channel-row__meters";
+      meters.append(
         buildMeterRow("♪", "channel-row__vol-fill", null, "Volume (CC7)"),
         buildMeterRow("↔", "channel-row__pan-fill", "channel-row__pan-label", "Pan (CC10)"),
         buildMeterRow("↕", "channel-row__pitch-fill", "channel-row__pitch-label", "Pitch bend")
       );
+      li.appendChild(meters);
 
       if (ch === 9) {
         // The drum grid below already is a per-key activity readout with its
@@ -443,25 +463,86 @@
       } else {
         // A full-width row of its own, below the name/mute/solo line, rather
         // than squeezed into that grid as another column -- packed in next
-        // to a long patch name, the two kept clipping each other.
+        // to a long patch name, the two kept clipping each other. Left empty
+        // here -- populateVoiceSquares (called once after the full channel
+        // list is in the DOM, below) measures the real rendered width and
+        // fills in exactly as many squares as fit, since that number depends
+        // on layout this row doesn't have yet mid-build.
         const voices = document.createElement("div");
         voices.className = "channel-row__voices";
         voices.setAttribute("aria-hidden", "true"); // decorative echo of audible state, not new info for a11y
         voices.title = "Notes currently sounding on this channel";
-        for (let i = 0; i < VOICE_SQUARE_CAP; i++) {
-          const sq = document.createElement("span");
-          sq.className = "voice-sq";
-          voices.appendChild(sq);
-        }
-        const voicesOverflow = document.createElement("span");
-        voicesOverflow.className = "channel-row__voices-overflow";
-        voicesOverflow.hidden = true;
-        voices.appendChild(voicesOverflow);
         li.appendChild(voices);
       }
 
       channelList.appendChild(li);
     }
+
+    populateVoiceSquares();
+  }
+
+  // -- per-row / global expand-collapse (volume/pan/pitch meters) --
+
+  function isRowExpanded(row) {
+    return row.querySelector(".channel-row__meters").classList.contains("channel-row__meters--expanded");
+  }
+
+  function setRowExpanded(row, expanded) {
+    row.querySelector(".channel-row__meters").classList.toggle("channel-row__meters--expanded", expanded);
+    const btn = row.querySelector(".channel-row__expand-btn");
+    btn.textContent = expanded ? "▴" : "▾";
+    btn.setAttribute("aria-expanded", String(expanded));
+    btn.setAttribute("aria-label", expanded ? "Collapse channel meters" : "Expand channel meters");
+  }
+
+  // Independent of any individual row's own state -- always forces every
+  // row to the same one, and flips which way that is on each click, rather
+  // than trying to infer "expand" vs "collapse" from a mixed starting point.
+  let allRowsExpanded = false;
+  expandAllBtn.addEventListener("click", () => {
+    allRowsExpanded = !allRowsExpanded;
+    expandAllBtn.textContent = allRowsExpanded ? "Collapse all" : "Expand all";
+    for (const row of channelList.children) setRowExpanded(row, allRowsExpanded);
+  });
+
+  // Fixed square size + gap, mirroring .voice-sq/.channel-row__voices in
+  // styles.css -- kept as their own constants (not read from computed
+  // style) because this only needs to run once per file load, and reading
+  // getComputedStyle for two numbers isn't worth it over just keeping the
+  // two sides of this in sync by hand (both are tiny, stable values).
+  const VOICE_SQ_SIZE = 6;
+  const VOICE_SQ_GAP = 2;
+  // How many voice-count squares actually fit a row of the given width,
+  // edge to edge -- "spawn enough boxes to fill the width" instead of a
+  // guessed fixed count that leaves a gap on a wide sidebar or overflows a
+  // narrow one. 6 is a floor, not a real expectation: only reachable if
+  // the sidebar were absurdly narrow, which the responsive breakpoint
+  // doesn't actually allow.
+  function computeVoiceSquareCount(containerWidthPx) {
+    if (!containerWidthPx) return 16;
+    return Math.max(6, Math.floor((containerWidthPx + VOICE_SQ_GAP) / (VOICE_SQ_SIZE + VOICE_SQ_GAP)));
+  }
+
+  /** Measures one .channel-row__voices (they're all the same width) and
+   * (re)builds every row's squares to that count -- see buildChannelList,
+   * which leaves these containers empty until this runs post-insertion. */
+  function populateVoiceSquares() {
+    const sample = channelList.querySelector(".channel-row__voices");
+    if (!sample) return;
+    const count = computeVoiceSquareCount(sample.clientWidth);
+    for (const voices of channelList.querySelectorAll(".channel-row__voices")) {
+      voices.innerHTML = "";
+      for (let i = 0; i < count; i++) {
+        const sq = document.createElement("span");
+        sq.className = "voice-sq";
+        voices.appendChild(sq);
+      }
+      const overflow = document.createElement("span");
+      overflow.className = "channel-row__voices-overflow";
+      overflow.hidden = true;
+      voices.appendChild(overflow);
+    }
+    voiceSquareCount = count;
   }
 
   resetMuteSoloBtn.addEventListener("click", () => {
@@ -520,14 +601,15 @@
   // Holding the flash for a minimum duration is what makes a fast drum hit
   // still readable as a light rather than a coin-flip.
   const MIN_FLASH_SEC = 0.18;
-  // How many of the per-channel voice-count squares to actually render --
-  // beyond this, a row switches to a "+N" overflow label instead of a wall
-  // of squares that would blow out the sidebar's fixed width. Fixed-size
-  // squares (see styles.css), not stretched to fill the row -- more of them
-  // is what reads as "higher resolution," not fatter individual boxes. The
-  // drum channel never renders this row at all -- its per-key grid already
-  // shows the same "what's sounding right now" information more precisely.
-  const VOICE_SQUARE_CAP = 16;
+  // How many of the per-channel voice-count squares actually fit the row's
+  // width -- beyond this, a row switches to a "+N" overflow label instead
+  // of just running out of squares to light. Recomputed per file load by
+  // populateVoiceSquares (see the -- channel sidebar -- section above),
+  // which measures the real rendered width rather than guessing a fixed
+  // count. The drum channel never renders this row at all -- its per-key
+  // grid already shows the same "what's sounding right now" information
+  // more precisely.
+  let voiceSquareCount = 16;
 
   /** How many notes in `notes` are sounding (or recently-enough-struck to
    * still read as active, see MIN_FLASH_SEC) at time t -- the shared
@@ -598,7 +680,10 @@
       const bank = valueAt(currentData.channelBanks.get(ch), t, { value: 0 }).value;
       const patchName = gmInstrumentName(prog ? prog.program : 0, ch === 9, bank);
       const patchEl = row.querySelector(".channel-row__patch");
-      if (patchEl.textContent !== patchName) patchEl.textContent = patchName;
+      if (patchEl.textContent !== patchName) {
+        patchEl.textContent = patchName;
+        patchEl.title = patchName;
+      }
 
       const activeCount = countActiveInWindow(perChannelNotes.get(ch), t);
       row.classList.toggle("is-active", activeCount > 0);
@@ -632,7 +717,7 @@
         const squares = row.querySelectorAll(".voice-sq");
         for (let i = 0; i < squares.length; i++) squares[i].classList.toggle("is-lit", i < activeCount);
         const overflowEl = row.querySelector(".channel-row__voices-overflow");
-        const overflow = activeCount - VOICE_SQUARE_CAP;
+        const overflow = activeCount - voiceSquareCount;
         overflowEl.hidden = overflow <= 0;
         if (overflow > 0) overflowEl.textContent = `+${overflow}`;
       }
