@@ -346,6 +346,7 @@ function computeBarTimes(timeSigEvents, totalTicks, divisionQ, tempoCheckpoints)
  *   noteOnVelocityOffsets: Map<number, number[]>,
  *   channelVolumes: Map<number, Array<{atSec:number, value:number}>>,
  *   channelBanks: Map<number, Array<{atSec:number, value:number}>>,
+ *   channelPans: Map<number, Array<{atSec:number, value:number}>>,
  *   title: string|null,
  *   copyright: string|null,
  *   text: string|null,
@@ -406,6 +407,7 @@ function parseMidiFile(bytes) {
   const noteOnVelocityOffsets = new Map(); // channel -> byte offsets of note-on velocity bytes (mute/solo patching)
   const channelVolumes = new Map(); // channel -> [{atSec, value}], value 0..1 from CC7 (channel volume)
   const channelBanks = new Map(); // channel -> [{atSec, value}], value 0..127 from CC0 (bank select MSB)
+  const channelPans = new Map(); // channel -> [{atSec, value}], value -1..1 from CC10 (pan), 0 = center
   const timeSigEvents = [];
   const tempoCheckpoints = [{ tick: 0, sec: 0, usPerTick: 500000 / divisionQ }];
 
@@ -507,6 +509,14 @@ function parseMidiFile(bytes) {
       channelsUsed.add(channel);
       if (!channelBanks.has(channel)) channelBanks.set(channel, []);
       channelBanks.get(channel).push({ atSec, value: e.d2 });
+    } else if (type === 0xb0 && e.d1 === 10) {
+      // Controller 10 = Pan. GM center is 64, not 0 or 127's midpoint by
+      // symmetry -- (raw-64)/64 puts hard left at -1, center at exactly 0,
+      // hard right at 127's own slightly-short-of-1 (0.984), the same
+      // 7-bit asymmetry every other bipolar CC/pitch-bend value here has.
+      channelsUsed.add(channel);
+      if (!channelPans.has(channel)) channelPans.set(channel, []);
+      channelPans.get(channel).push({ atSec, value: (e.d2 - 64) / 64 });
     }
   }
 
@@ -524,6 +534,7 @@ function parseMidiFile(bytes) {
   for (const list of pitchBends.values()) list.sort((a, b) => a.atSec - b.atSec);
   for (const list of channelVolumes.values()) list.sort((a, b) => a.atSec - b.atSec);
   for (const list of channelBanks.values()) list.sort((a, b) => a.atSec - b.atSec);
+  for (const list of channelPans.values()) list.sort((a, b) => a.atSec - b.atSec);
 
   let durationSec = tailSec;
   for (const n of notes) durationSec = Math.max(durationSec, n.endSec);
@@ -534,7 +545,7 @@ function parseMidiFile(bytes) {
 
   return {
     durationSec, notes, programChanges, pitchBends, channelsUsed, barTimes,
-    noteOnVelocityOffsets, channelVolumes, channelBanks,
+    noteOnVelocityOffsets, channelVolumes, channelBanks, channelPans,
     title, copyright, text: textNote, markers,
   };
 }

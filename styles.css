@@ -678,8 +678,13 @@ button {
   margin-top: 0.35rem;
   padding-left: calc(8px + 3.4rem + 0.45rem * 2);
 }
+/* Squares fill the row's own width rather than sitting in a fixed-size
+ * clump -- capped so they stay squares-ish on a wide sidebar instead of
+ * turning into fat blocks once there's more row than there are squares. */
 .voice-sq {
-  width: 5px;
+  flex: 1 1 0;
+  min-width: 3px;
+  max-width: 16px;
   height: 5px;
   border-radius: 1px;
   background: var(--bg);
@@ -690,6 +695,7 @@ button {
   box-shadow: none;
 }
 .channel-row__voices-overflow {
+  flex: none;
   margin-left: 1px;
   font-family: var(--font-mono);
   font-size: 0.58rem;
@@ -739,6 +745,40 @@ button {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--text-dim);
+}
+
+/* Live pan (CC10), directly under the volume swatch + "CH xx" text --
+ * exactly their combined width, not the row's, since this reads as
+ * belonging to that same little "channel identity" strip rather than to
+ * the patch name/mute/solo line beside it. A center tick marks 0; the fill
+ * grows from there toward whichever side the channel's actually panned
+ * to, tinted with the row's own --ch-color like the voice squares below. */
+.channel-row__pan {
+  position: relative;
+  width: calc(8px + 3.4rem + 0.45rem);
+  height: 4px;
+  margin-top: 0.3rem;
+  border-radius: 1px;
+  background: var(--bg);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.channel-row__pan::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.channel-row__pan-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  background: var(--ch-color, var(--blue));
 }
 
 .channel-row__patch {

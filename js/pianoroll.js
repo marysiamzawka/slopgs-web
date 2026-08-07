@@ -34,6 +34,10 @@ const BURST_LIFETIME_MS = 320;
 
 const CHANNEL_HUES = [206, 42, 150, 350, 265, 20, 190, 100, 320, null, 60, 230, 10, 170, 290, 80];
 const DRUM_CHANNEL = 9;
+// Matches .channel-row.is-silenced's opacity in styles.css -- one dimming
+// amount for "this channel is muted (or not the soloed one)" everywhere it
+// shows up, sidebar and roll alike.
+const MUTED_ALPHA_SCALE = 0.32;
 
 function channelColor(ch, alpha = 1, variant = "solid") {
   const fill = variant === "fill";
@@ -67,6 +71,11 @@ class PianoRoll {
     this.lowKey = STANDARD_LOW_KEY;
     this.highKey = STANDARD_HIGH_KEY;
     this.keyCount = STANDARD_HIGH_KEY - STANDARD_LOW_KEY + 1;
+    // Channels that shouldn't read as "sounding" right now -- explicit
+    // mutes, or (when any channel is soloed) everything that isn't it. Set
+    // from app.js's own effectiveMutedChannels(), same source of truth the
+    // sidebar and the actual audio patching use, so all three always agree.
+    this.mutedChannels = new Set();
     this.dpr = Math.max(1, window.devicePixelRatio || 1);
     this.bursts = []; // { key, x, colorCh, firedAt }
     this._firedNoteBursts = new WeakSet();
@@ -80,6 +89,7 @@ class PianoRoll {
     this.data = data;
     this.bursts.length = 0;
     this._firedNoteBursts = new WeakSet();
+    this.mutedChannels = new Set(); // a freshly loaded file starts with nothing muted/soloed
     this._recomputeLongNotes();
 
     let dataLow = STANDARD_LOW_KEY, dataHigh = STANDARD_HIGH_KEY;
@@ -121,6 +131,14 @@ class PianoRoll {
     if (clamped === this.lookaheadSec) return;
     this.lookaheadSec = clamped;
     this._recomputeLongNotes();
+  }
+
+  /** @param {Set<number>} channels channels to render dimmed (muted, or
+   * everything-but-the-soloed-one) -- takes effect on the next drawn
+   * frame, no redraw needs triggering since _draw already runs every
+   * frame via the rAF loop in start(). */
+  setMutedChannels(channels) {
+    this.mutedChannels = channels || new Set();
   }
 
   _resize() {
@@ -199,16 +217,20 @@ class PianoRoll {
       const w = Math.max(2, colWidth - 1.5);
       const h = Math.max(3, bottomY - topY);
       const alpha = velocityAlpha(note.velocity);
+      const dim = this.mutedChannels.has(note.channel) ? MUTED_ALPHA_SCALE : 1;
 
-      ctx.fillStyle = channelColor(note.channel, alpha.fill, "fill");
+      ctx.fillStyle = channelColor(note.channel, alpha.fill * dim, "fill");
       ctx.fillRect(x, topY, w, h);
-      ctx.strokeStyle = channelColor(note.channel, alpha.border);
+      ctx.strokeStyle = channelColor(note.channel, alpha.border * dim);
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, topY + 0.5, w - 1, Math.max(1, h - 1));
 
       if (t >= note.startSec && t <= note.endSec) {
         soundingKeys.set(note.key, note.channel);
-        if (!this._firedNoteBursts.has(note)) {
+        // A muted hit still lights the key (dimmed, below) so the roll
+        // still reads as "this note fired" -- it just doesn't get the
+        // celebratory spark an audible one does.
+        if (dim === 1 && !this._firedNoteBursts.has(note)) {
           this._firedNoteBursts.add(note);
           this.bursts.push({ key: note.key, channel: note.channel, x: this._keyX(note.key) + colWidth / 2, firedAt: performance.now() });
         }
@@ -336,7 +358,10 @@ class PianoRoll {
       const black = isBlackKey(k);
       const lit = soundingKeys && soundingKeys.get(k);
       let fill = black ? "rgba(20,22,26,0.9)" : "rgba(230,230,230,0.12)";
-      if (lit !== undefined && lit !== null) fill = channelColor(lit, 0.95);
+      if (lit !== undefined && lit !== null) {
+        const dim = this.mutedChannels.has(lit) ? MUTED_ALPHA_SCALE : 1;
+        fill = channelColor(lit, 0.95 * dim);
+      }
       ctx.fillStyle = fill;
       const keyH = black ? stripH * 0.62 : stripH * 0.92;
       ctx.fillRect(x + 0.5, impactY + stripH - keyH, colWidth - 1, keyH);

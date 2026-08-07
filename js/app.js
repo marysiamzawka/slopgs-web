@@ -368,6 +368,20 @@
       main.append(swatch, num, patch, muteBtn, soloBtn);
       li.appendChild(main);
 
+      // Live pan (CC10) -- a thin bar under the volume swatch and "CH xx"
+      // text specifically (not the full row width, which is already the
+      // patch name/mute/solo's own space), filling from its own center tick
+      // toward whichever side the channel is actually panned to. Center
+      // (the GM default, and where most channels that never send CC10
+      // sit) shows as just the tick with no visible fill.
+      const pan = document.createElement("div");
+      pan.className = "channel-row__pan";
+      pan.title = "Pan (CC10)";
+      const panFill = document.createElement("span");
+      panFill.className = "channel-row__pan-fill";
+      pan.appendChild(panFill);
+      li.appendChild(pan);
+
       if (ch === 9) {
         // The drum grid below already is a per-key activity readout with its
         // own labels -- a second, generic voice-count meter on this row
@@ -435,6 +449,7 @@
   async function applyMuteSolo() {
     if (!currentData || !currentBytes) return;
     const muted = effectiveMutedChannels();
+    roll.setMutedChannels(muted);
 
     for (const row of channelList.children) {
       const ch = Number(row.dataset.channel);
@@ -522,6 +537,21 @@
       const vol = valueAt(currentData.channelVolumes.get(ch), t, { value: GM_DEFAULT_CHANNEL_VOLUME }).value;
       const fillEl = row.querySelector(".channel-row__swatch-fill");
       fillEl.style.clipPath = `inset(${(1 - vol) * 100}% 0 0 0)`;
+
+      // GM's default when a file never sends CC10 is dead center (0), same
+      // fallback convention as channel volume's own default above -- fills
+      // from the bar's center tick outward toward whichever side is panned;
+      // center itself renders as just the tick, no visible fill.
+      const pan = valueAt(currentData.channelPans.get(ch), t, { value: 0 }).value;
+      const panFillEl = row.querySelector(".channel-row__pan-fill");
+      const halfPct = Math.max(-1, Math.min(1, pan)) * 50;
+      if (halfPct >= 0) {
+        panFillEl.style.left = "50%";
+        panFillEl.style.width = `${halfPct}%`;
+      } else {
+        panFillEl.style.left = `${50 + halfPct}%`;
+        panFillEl.style.width = `${-halfPct}%`;
+      }
 
       if (ch === 9) {
         const grid = row.querySelector(".drum-grid");
