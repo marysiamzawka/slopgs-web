@@ -183,36 +183,72 @@ button {
   right: 0;
   top: calc(82% + 30px);
   bottom: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.15rem;
-  padding: 0.2rem 1.25rem;
   pointer-events: none;
   overflow: hidden;
 }
 
-.lyrics-overlay__line {
+/* Four rows, one per relative-to-current position (prev/current/next/
+ * next-next), stacked on the same centered anchor point and told apart
+ * only by data-role -- see advanceLyricRowsByOne in app.js. They're *not*
+ * bound one-to-one with "prev"/"current"/etc: as playback advances, which
+ * physical row holds which role rotates by one, so one continuous element
+ * visibly carries its text from "next" up to "current" instead of the text
+ * jumping between fixed boxes. That rotation is what makes this read as
+ * motion. All four transition on transform/opacity/color only -- never
+ * font-size or top/left -- so a line growing "bigger" is a scale(), not a
+ * layout-triggering size change, same discipline as this file's other
+ * live-updating meters (see .channel-row__meter-fill's own comment).
+ */
+.lyrics-overlay__row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
   margin: 0;
-  max-width: 100%;
+  padding: 0 1.25rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
   line-height: 1.25;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-faint);
+  opacity: 0;
+  transform: translateY(-50%);
+  transform-origin: 50% 50%;
+  transition: transform 0.4s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.4s ease, color 0.4s ease;
 }
 
-.lyrics-overlay__line--current {
-  font-size: 1.05rem;
-  font-weight: 600;
+.lyrics-overlay__row--no-transition {
+  transition: none !important;
+}
+
+.lyrics-overlay__row[data-role="-1"] {
+  transform: translateY(-50%) translateY(-1.5em) scale(0.85);
+  opacity: 0.4;
+}
+.lyrics-overlay__row[data-role="0"] {
+  transform: translateY(-50%) scale(1.22);
+  opacity: 1;
   color: var(--text);
 }
-
-.lyrics-overlay__line--prev,
-.lyrics-overlay__line--next {
-  font-size: 0.82rem;
-  color: var(--text-faint);
+.lyrics-overlay__row[data-role="1"] {
+  transform: translateY(-50%) translateY(1.4em) scale(0.85);
+  opacity: 0.42;
+}
+.lyrics-overlay__row[data-role="2"] {
+  transform: translateY(-50%) translateY(2.5em) scale(0.7);
+  opacity: 0.16;
+}
+/* The pre-transition state for a row just recycled into role 2 -- same
+ * transform as role 2 itself (so it doesn't also slide), opacity 0 (so the
+ * only thing that animates on entry is the fade-in the brief asked for).
+ * Applied with .lyrics-overlay__row--no-transition for one frame, then
+ * swapped straight to data-role="2" -- see advanceLyricRowsByOne. */
+.lyrics-overlay__row[data-role="enter"] {
+  transform: translateY(-50%) translateY(2.5em) scale(0.7);
+  opacity: 0;
 }
 
 /* --------------------------------------------------------------- dropzone */
@@ -1087,11 +1123,43 @@ button {
  * across a list where most names *do* fit) -- the title attribute (set in
  * app.js) covers the rare name that still doesn't. */
 .channel-row__patch {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.channel-row__patch-text {
   font-size: 0.95rem;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* The one-per-file "boost the melody line" toggle -- see lyricMelodyChannel
+ * in midi.js and applyMuteSolo in app.js. Lives inline before the patch
+ * name rather than as a fifth column in .channel-row__main-top's grid on
+ * purpose: at most one row in the whole list ever has this button, and a
+ * grid column reserved for it would sit empty (and misalign nothing, since
+ * nothing else needs to line up with it) on every other row of every file
+ * that has no lyrics at all -- the overwhelming majority. Hidden by default
+ * (buildChannelList only un-hides it on the row that actually qualifies). */
+.channel-row__btn--boost {
+  color: var(--text-faint);
+}
+/* .channel-row__btn's own `display: grid` below has the same specificity as
+ * the UA stylesheet's `[hidden] { display: none }` and comes after it in
+ * the cascade, so it silently wins without this -- the same [hidden]-vs-
+ * class-specificity gotcha this file already works around elsewhere. */
+.channel-row__btn--boost[hidden] {
+  display: none;
+}
+.channel-row__btn--boost[aria-pressed="true"] {
+  color: #2a1f0a;
+  background: var(--amber);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 .channel-row__btn {

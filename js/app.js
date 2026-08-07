@@ -27,9 +27,11 @@
 
   const rollCanvas = document.getElementById("roll");
   const lyricsOverlay = document.getElementById("lyricsOverlay");
-  const lyricPrevEl = document.getElementById("lyricPrev");
-  const lyricCurrentEl = document.getElementById("lyricCurrent");
-  const lyricNextEl = document.getElementById("lyricNext");
+  // Each row's *physical* element is reused across all four roles over
+  // time (see advanceLyricRowsByOne) -- this array's order is arbitrary
+  // and never assumed to mean anything; `role` (kept alongside each el) is
+  // the only thing that says what a row currently shows.
+  const lyricRows = [...document.querySelectorAll("[data-lyric-row]")].map((el) => ({ el, role: null }));
   const channelList = document.getElementById("channelList");
   const sidebarEmpty = document.getElementById("sidebarEmpty");
   const voiceMeter = document.getElementById("voiceMeter");
@@ -83,6 +85,15 @@
   let currentMarkerText = null;
   const mutedChannels = new Set();
   const soloedChannels = new Set();
+  // Whether the user has toggled on the "boost the melody line" control --
+  // see lyricMelodyChannel in midi.js and applyMuteSolo below. Reset to off
+  // on every new file load, same as mute/solo: a boost dialed in for one
+  // song shouldn't silently carry over and mislead on the next.
+  let melodyBoostEnabled = false;
+  // Proportional velocity multiplier, clamped at 127 -- a gain, not a
+  // ceiling, so the channel's own dynamics (loud notes vs. quiet ones)
+  // still come through instead of flattening into one constant loudness.
+  const MELODY_BOOST_FACTOR = 1.5;
 
   function fmtTime(sec) {
     if (!Number.isFinite(sec) || sec < 0) sec = 0;
@@ -409,8 +420,34 @@
 
       const patch = document.createElement("div");
       patch.className = "channel-row__patch";
-      patch.textContent = gmInstrumentName(0, ch === 9);
-      patch.title = patch.textContent; // full name on hover, for the rare name still too long for the full-width line
+
+      // Shown only on the one channel (if any) detectLyricMelodyChannel
+      // picked out for this file -- see that function's own comment and
+      // applyMuteSolo below, which is what the boost actually patches into
+      // the loaded bytes. Built for every row and hidden by default rather
+      // than only ever created on the winning row, so there's exactly one
+      // code path handling "does this row have a boost button" instead of
+      // two (build-time presence vs. runtime insertion).
+      const boostBtn = document.createElement("button");
+      boostBtn.type = "button";
+      boostBtn.className = "channel-row__btn channel-row__btn--boost";
+      boostBtn.textContent = "B";
+      boostBtn.hidden = true;
+      boostBtn.setAttribute("aria-pressed", "false");
+      boostBtn.title = "This channel's notes line up closely with the lyrics' timing -- probably the melody line. Boost it to hear it more clearly over the mix.";
+      boostBtn.setAttribute("aria-label", `Boost channel ${ch + 1} -- it likely carries the melody line the lyrics follow`);
+      boostBtn.addEventListener("click", () => {
+        melodyBoostEnabled = !melodyBoostEnabled;
+        boostBtn.setAttribute("aria-pressed", String(melodyBoostEnabled));
+        applyMuteSolo();
+      });
+
+      const patchText = document.createElement("span");
+      patchText.className = "channel-row__patch-text";
+      patchText.textContent = gmInstrumentName(0, ch === 9);
+      patchText.title = patchText.textContent; // full name on hover, for the rare name still too long for the full-width line
+
+      patch.append(boostBtn, patchText);
 
       const muteBtn = document.createElement("button");
       muteBtn.type = "button";
@@ -503,6 +540,13 @@
     }
 
     populateVoiceSquares();
+
+    melodyBoostEnabled = false;
+    if (data.lyricMelodyChannel !== null) {
+      const row = channelList.querySelector(`.channel-row[data-channel="${data.lyricMelodyChannel}"]`);
+      const btn = row && row.querySelector(".channel-row__btn--boost");
+      if (btn) btn.hidden = false;
+    }
   }
 
   // -- per-row / global expand-collapse (volume/pan/pitch meters) --
@@ -606,6 +650,19 @@
       const offsets = currentData.noteOnVelocityOffsets.get(ch);
       if (!offsets) continue;
       for (const off of offsets) patched[off] = 0;
+    }
+    // Same byte-patching path mute/solo already uses -- msgs.wasm has no
+    // live per-channel gain of its own (see reloadPreservingPosition in
+    // synth.js), so "louder" means scaling this channel's own note-on
+    // velocities up before the file is (re)loaded, same way "silent" means
+    // scaling them to 0 above. Skipped if the melody channel is itself
+    // muted right now -- boosting a channel that isn't sounding at all
+    // wouldn't do anything audible anyway.
+    if (melodyBoostEnabled && currentData.lyricMelodyChannel !== null && !muted.has(currentData.lyricMelodyChannel)) {
+      const offsets = currentData.noteOnVelocityOffsets.get(currentData.lyricMelodyChannel);
+      if (offsets) {
+        for (const off of offsets) patched[off] = Math.min(127, Math.round(patched[off] * MELODY_BOOST_FACTOR));
+      }
     }
     try {
       await synth.reloadPreservingPosition(patched);
@@ -734,7 +791,11 @@
       const prog = valueAt(currentData.programChanges.get(ch), t, null);
       const bank = valueAt(currentData.channelBanks.get(ch), t, { value: 0 }).value;
       const patchName = gmInstrumentName(prog ? prog.program : 0, ch === 9, bank);
-      const patchEl = row.querySelector(".channel-row__patch");
+      // .channel-row__patch-text, not .channel-row__patch itself -- the
+      // latter is a flex container that may also hold the boost button
+      // (see buildChannelList); writing textContent straight onto it would
+      // silently delete that button along with the old text.
+      const patchEl = row.querySelector(".channel-row__patch-text");
       if (patchEl.textContent !== patchName) {
         patchEl.textContent = patchName;
         patchEl.title = patchName;
@@ -815,18 +876,6 @@
 
   // -- karaoke lyrics --
 
-  /** Resets/hides the piano roll's lyrics ticker for a freshly loaded file
-   * -- shown only for the minority of files that carry any SMF Lyric
-   * events at all (see lyricLines in midi.js); everyone else leaves the
-   * roll's own dead space exactly as blank as it's always been. */
-  function buildLyricsOverlay(data) {
-    lastLyricLineIndex = -2; // sentinel below 0/-1, guarantees the first updateLyrics call writes
-    lyricsOverlay.hidden = !(data.lyricLines && data.lyricLines.length > 0);
-    lyricPrevEl.textContent = "";
-    lyricCurrentEl.textContent = "";
-    lyricNextEl.textContent = "";
-  }
-
   /** Index of the most-recently-started lyric line at or before `t`, or -1
    * if the file's lyrics haven't started yet. Same binary-search shape as
    * barIndexAt below -- kept separate since the two want different return
@@ -841,27 +890,113 @@
     return ans;
   }
 
-  let lastLyricLineIndex = -2;
+  function setLyricRowRole(row, role) {
+    row.role = role;
+    if (role === null) row.el.removeAttribute("data-role");
+    else row.el.dataset.role = String(role);
+  }
 
-  /** Current line centered, one line of context dimmed above and below --
-   * refreshed on the same ~140ms poll as the rest of the transport (see
-   * updateTransport). Skips the DOM writes entirely when the active line
-   * hasn't changed since the last poll, same guard updateMetaMarker uses. */
+  function setLyricRowText(row, text) {
+    row.el.textContent = text || "";
+    row.el.title = text || "";
+  }
+
+  function setLyricRowLive(row, isCurrent) {
+    if (isCurrent) row.el.setAttribute("aria-live", "polite");
+    else row.el.removeAttribute("aria-live");
+  }
+
+  /** Snaps every row straight to its target role/text with no transition --
+   * used for a freshly loaded file and for any jump that isn't a plain
+   * one-line forward advance (a seek, a loop restart). Animating a "slide
+   * past everything in between" for those would read as a glitch, not
+   * motion, so this skips straight to the resting arrangement. */
+  function snapLyricRows(lines, idx) {
+    const textFor = [
+      idx > 0 ? lines[idx - 1].text : "",
+      idx >= 0 ? lines[idx].text : "",
+      idx + 1 < lines.length ? lines[idx + 1].text : "",
+      idx + 2 < lines.length ? lines[idx + 2].text : "",
+    ];
+    for (let i = 0; i < lyricRows.length; i++) {
+      const row = lyricRows[i];
+      const role = i - 1; // -1, 0, 1, 2
+      row.el.classList.add("lyrics-overlay__row--no-transition");
+      setLyricRowRole(row, role);
+      setLyricRowText(row, textFor[i]);
+      setLyricRowLive(row, role === 0);
+    }
+    // Forces the no-transition styles to actually land before the class
+    // comes back off, or the *next* real advance would transition from
+    // this frame's stale (pre-snap) state instead of starting clean.
+    void lyricsOverlay.offsetHeight;
+    for (const row of lyricRows) row.el.classList.remove("lyrics-overlay__row--no-transition");
+  }
+
+  /** Rotates which physical row element holds which role, one step
+   * forward -- the row at role -1 (about to scroll off) is recycled to
+   * become the new role 2 (the line now coming into view), instantly
+   * repositioned to exactly where role 2 already rests but invisible, then
+   * released back into its normal transition so it fades from there to
+   * role 2's real resting look. Every other row just has its role
+   * decremented by one and transitions there normally. That's what reads
+   * as one continuous line physically moving from "next" up to "current"
+   * (and "current" up and out to "prev") instead of four fixed boxes
+   * relabeling their text. Only valid for exactly one line of forward
+   * advance -- anything else goes through snapLyricRows instead. */
+  function advanceLyricRowsByOne(lines, idx) {
+    const outgoing = lyricRows.find((r) => r.role === -1);
+    for (const row of lyricRows) {
+      if (row === outgoing) continue;
+      setLyricRowRole(row, row.role - 1);
+      setLyricRowLive(row, row.role === 0);
+    }
+    outgoing.el.classList.add("lyrics-overlay__row--no-transition");
+    setLyricRowRole(outgoing, "enter");
+    setLyricRowText(outgoing, idx + 2 < lines.length ? lines[idx + 2].text : "");
+    setLyricRowLive(outgoing, false);
+    void outgoing.el.offsetHeight; // commit the invisible "enter" state before transitions resume
+    outgoing.el.classList.remove("lyrics-overlay__row--no-transition");
+    setLyricRowRole(outgoing, 2); // the transition from here to role 2's resting look is what fades it in
+  }
+
+  let lastLyricLineIndex = -2; // sentinel below any real index -- guarantees the first updateLyrics call writes
+  let lyricRowsPrimed = false; // false until the first snap -- gates advanceLyricRowsByOne, which needs a real role -1 to recycle
+
+  /** Resets/hides the piano roll's lyrics ticker for a freshly loaded file
+   * -- shown only for the minority of files that carry any SMF Lyric
+   * events at all (see lyricLines in midi.js); everyone else leaves the
+   * roll's own dead space exactly as blank as it's always been. */
+  function buildLyricsOverlay(data) {
+    lastLyricLineIndex = -2;
+    lyricRowsPrimed = false;
+    lyricsOverlay.hidden = !(data.lyricLines && data.lyricLines.length > 0);
+    for (const row of lyricRows) {
+      row.el.classList.add("lyrics-overlay__row--no-transition");
+      setLyricRowRole(row, null);
+      setLyricRowText(row, "");
+      setLyricRowLive(row, false);
+    }
+    void lyricsOverlay.offsetHeight;
+    for (const row of lyricRows) row.el.classList.remove("lyrics-overlay__row--no-transition");
+  }
+
+  /** Current line centered (bright, enlarged), two lines of dimmed context
+   * below and one above, each sliding/fading into its new role as playback
+   * crosses a line boundary -- refreshed on the same ~140ms poll as the
+   * rest of the transport (see updateTransport). Skips all of this
+   * entirely when the active line hasn't changed since the last poll, same
+   * guard updateMetaMarker uses. */
   function updateLyrics(t) {
     if (!currentData || !currentData.lyricLines || currentData.lyricLines.length === 0) return;
     const lines = currentData.lyricLines;
     const idx = lyricLineIndexAt(lines, t);
     if (idx === lastLyricLineIndex) return;
+    const isForwardStep = lyricRowsPrimed && idx === lastLyricLineIndex + 1;
     lastLyricLineIndex = idx;
-    const prev = idx > 0 ? lines[idx - 1].text : "";
-    const current = idx >= 0 ? lines[idx].text : "";
-    const next = idx + 1 < lines.length ? lines[idx + 1].text : "";
-    lyricPrevEl.textContent = prev;
-    lyricPrevEl.title = prev;
-    lyricCurrentEl.textContent = current;
-    lyricCurrentEl.title = current;
-    lyricNextEl.textContent = next;
-    lyricNextEl.title = next;
+    if (isForwardStep) advanceLyricRowsByOne(lines, idx);
+    else snapLyricRows(lines, idx);
+    lyricRowsPrimed = true;
   }
 
   // -- metadata bar (marker readout) --

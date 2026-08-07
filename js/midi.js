@@ -196,20 +196,53 @@ function looksLikeShiftJisBytes(bytes) {
   return false;
 }
 
+// Windows-1250 (Central European) and Windows-1252 (Western European) agree
+// on plain ASCII and diverge only in the upper half -- and both are total
+// (every byte decodes to *something*, never a replacement char), so a
+// failed UTF-8 decode can tell us "this is some legacy codepage" but not
+// which one. Two of Windows-1250's most common Polish letters (Ł/ł, Ą/ą)
+// sit at byte values Windows-1252 reassigns to symbols that essentially
+// never appear in real running text (£, ³, ¥, ¹) -- disco-polo lyrics
+// decoded as 1252 instead of 1250 read as "so³dka"/"tob¹" rather than
+// "słodka"/"tobą". Requiring the symbol to sit directly against a letter
+// (not a digit or space) is what makes even one such hit trustworthy: a
+// genuine "5³" or "footnote¹" sits next to a digit, never buried mid-word
+// the way a substituted diacritic always is.
+const CP1252_MISREAD_MARKER = /[A-Za-z][¹³¥£]|[¹³¥£][A-Za-z]/;
+
+/**
+ * Windows-1250 vs. Windows-1252, decided once for the whole file rather
+ * than per meta-text event -- a lyric track alone can be a hundred-plus
+ * separate events, most just a syllable long, and re-guessing that often
+ * risked one line's syllables flipping encoding mid-word depending on
+ * which particular bytes happened to land in which event. A single file
+ * carrying a short, diacritic-free title alongside its lyrics is common
+ * too, so this doesn't wait for multiple hits -- it checks every meta-text
+ * byte chunk the file has (plain-ASCII/UTF-8 chunks, the majority in most
+ * files, simply never match) and switches on the first one that does.
+ */
+function chooseLegacyEncoding(metaByteChunks) {
+  for (const chunk of metaByteChunks) {
+    const asWin1252 = new TextDecoder("windows-1252").decode(chunk);
+    if (CP1252_MISREAD_MARKER.test(asWin1252)) return "windows-1250";
+  }
+  return "windows-1252";
+}
+
 /**
  * Meta-text bytes have no declared encoding -- the spec says ASCII, real
  * files don't agree. Try UTF-8 first (correct for the plain-ASCII majority
  * and any modern UTF-8 file); if that produces mojibake (U+FFFD), the
  * corpus this was tested against splits between Shift-JIS (Japanese-scene
- * BMS/BotB-adjacent files, old doujin sequences) and Windows-1252
- * (Western European packs) -- looksLikeShiftJisBytes decides which to try,
- * with Windows-1252 as the catch-all since it has no undecodable bytes.
- * Untrimmed: most callers want decodeMetaText below, which trims for
- * display, but lyric events (see parseMidiFile's lyricLines) need their
- * whitespace -- a bare "\r" or a trailing space marking a word's end is
- * exactly what a trim would throw away.
+ * BMS/BotB-adjacent files, old doujin sequences) and a Western/Central
+ * European legacy codepage -- looksLikeShiftJisBytes decides whether to try
+ * the former; `legacyEncoding` (see chooseLegacyEncoding) says which of the
+ * latter two to fall back to. Untrimmed: most callers want decodeMetaText
+ * below, which trims for display, but lyric events (see parseMidiFile's
+ * lyricLines) need their whitespace -- a bare "\r" or a trailing space
+ * marking a word's end is exactly what a trim would throw away.
  */
-function decodeMetaBytes(bytes) {
+function decodeMetaBytes(bytes, legacyEncoding) {
   const utf8 = new TextDecoder("utf-8").decode(bytes);
   if (!utf8.includes("�")) return utf8;
   if (looksLikeShiftJisBytes(bytes)) {
@@ -221,14 +254,14 @@ function decodeMetaBytes(bytes) {
     }
   }
   try {
-    return new TextDecoder("windows-1252").decode(bytes);
+    return new TextDecoder(legacyEncoding).decode(bytes);
   } catch {
     return utf8;
   }
 }
 
-function decodeMetaText(bytes) {
-  return decodeMetaBytes(bytes).trim();
+function decodeMetaText(bytes, legacyEncoding) {
+  return decodeMetaBytes(bytes, legacyEncoding).trim();
 }
 
 function readVLQ(bytes, pos) {
@@ -344,6 +377,73 @@ function computeBarTimes(timeSigEvents, totalTicks, divisionQ, tempoCheckpoints)
   return barTicks.map((t) => tickToSecFromCheckpoints(tempoCheckpoints, t));
 }
 
+// Tolerance (seconds) for "this note-on and this lyric line started at
+// basically the same moment" in detectLyricMelodyChannel below. Loose
+// enough to absorb the small, real gap some arrangers leave between a
+// lyric event and its paired note; tight enough that it still means
+// something on a song where lines land a couple of seconds apart.
+const LYRIC_MELODY_TOLERANCE_SEC = 0.3;
+const LYRIC_MELODY_MIN_MATCH_RATE = 0.65;
+// A channel with a note practically everywhere (a constant comping/bass
+// part) will "match" most lyric times by sheer coincidence, not
+// correlation -- this caps how dense a candidate is allowed to be, in the
+// same units as matchRate: the fraction of the song a note-on could land
+// in and still count as "near" some random point. A real melody line (or
+// its instrumental double) has the same rests between phrases the vocal
+// does, so it structurally can't be this dense.
+const LYRIC_MELODY_MAX_CHANCE_RATE = 0.85;
+
+/**
+ * Karaoke-oriented MIDI packs (see lyricLines above it) often carry a
+ * second, instrumental copy of the vocal melody on its own channel --
+ * arranged so the song still sounds complete without an actual singer, and
+ * incidentally so the lyrics have something to visually sync against.
+ * That channel's note onsets end up landing suspiciously close to the
+ * lyric lines' own start times -- much closer than any other channel's,
+ * and much closer than sheer note density alone would explain by chance.
+ * This looks for that channel and returns it (for a "boost the melody"
+ * toggle -- see applyMuteSolo in app.js), or null if nothing in the file
+ * stands out enough to trust. Never the drum channel: rhythm isn't melody,
+ * no matter how densely its onsets happen to line up with lyric timing.
+ */
+function detectLyricMelodyChannel(lyricLines, notes, durationSec) {
+  if (lyricLines.length === 0 || durationSec <= 0) return null;
+  const lyricTimes = lyricLines.map((l) => l.atSec);
+
+  const startsByChannel = new Map();
+  for (const n of notes) {
+    if (n.channel === 9) continue; // GM/GS percussion -- never a melody line
+    if (!startsByChannel.has(n.channel)) startsByChannel.set(n.channel, []);
+    startsByChannel.get(n.channel).push(n.startSec);
+  }
+
+  let best = null;
+  for (const [channel, starts] of startsByChannel) {
+    if (starts.length < 4) continue; // too few notes for the match rate to mean anything
+    starts.sort((a, b) => a - b);
+
+    let matches = 0;
+    for (const lt of lyricTimes) {
+      let lo = 0, hi = starts.length - 1, ans = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (starts[mid] <= lt) { ans = mid; lo = mid + 1; }
+        else hi = mid - 1;
+      }
+      const candidates = [starts[ans], starts[ans + 1]].filter((s) => s !== undefined);
+      if (candidates.some((s) => Math.abs(s - lt) <= LYRIC_MELODY_TOLERANCE_SEC)) matches++;
+    }
+
+    const matchRate = matches / lyricTimes.length;
+    const chanceRate = Math.min(1, starts.length * 2 * LYRIC_MELODY_TOLERANCE_SEC / durationSec);
+
+    if (matchRate >= LYRIC_MELODY_MIN_MATCH_RATE && chanceRate <= LYRIC_MELODY_MAX_CHANCE_RATE) {
+      if (!best || matchRate > best.matchRate) best = { channel, matchRate };
+    }
+  }
+  return best ? best.channel : null;
+}
+
 /**
  * @returns {{
  *   durationSec: number,
@@ -361,6 +461,7 @@ function computeBarTimes(timeSigEvents, totalTicks, divisionQ, tempoCheckpoints)
  *   text: string|null,
  *   markers: Array<{atSec:number, text:string}>,
  *   lyricLines: Array<{atSec:number, text:string}>,
+ *   lyricMelodyChannel: number|null,
  * }}
  */
 function parseMidiFile(bytes) {
@@ -393,6 +494,12 @@ function parseMidiFile(bytes) {
     });
   }
   events.sort((a, b) => (a.absTick - b.absTick) || (a.seq - b.seq));
+
+  // One encoding decision for every meta-text event in the file -- see
+  // chooseLegacyEncoding for why this can't be a per-event guess.
+  const legacyEncoding = chooseLegacyEncoding(
+    events.filter((e) => e.kind === "metatext").map((e) => e.data)
+  );
 
   // Pass 2: tick -> seconds, exactly mirroring smf.c's smpte/PPQ branches.
   const smpte = (division & 0x8000) !== 0;
@@ -477,7 +584,7 @@ function parseMidiFile(bytes) {
         // Lyric: not trimmed like the rest (see decodeMetaBytes) -- a break
         // may be its own whole event ("\r" and nothing else), which a trim
         // would erase before flushLyricLine ever saw it.
-        const raw = decodeMetaBytes(e.data);
+        const raw = decodeMetaBytes(e.data, legacyEncoding);
         const segments = raw.split(/[\r\n]+/);
         for (let i = 0; i < segments.length; i++) {
           if (i > 0) flushLyricLine(); // a break preceded this segment
@@ -488,7 +595,7 @@ function parseMidiFile(bytes) {
         }
         continue;
       }
-      const text = decodeMetaText(e.data);
+      const text = decodeMetaText(e.data, legacyEncoding);
       if (text) {
         if (e.metaType === 0x03) {
           // TrackName: per the SMF spec this is the *sequence* name only in
@@ -590,10 +697,12 @@ function parseMidiFile(bytes) {
     ? [0, durationSec] // no PPQ tempo map to derive bars from; snapping degrades to start/end only
     : computeBarTimes(timeSigEvents, lastTick, divisionQ, tempoCheckpoints);
 
+  const lyricMelodyChannel = detectLyricMelodyChannel(lyricLines, notes, durationSec);
+
   return {
     durationSec, notes, programChanges, pitchBends, channelsUsed, barTimes,
     noteOnVelocityOffsets, channelVolumes, channelBanks, channelPans,
-    title, copyright, text: textNote, markers, lyricLines,
+    title, copyright, text: textNote, markers, lyricLines, lyricMelodyChannel,
   };
 }
 
