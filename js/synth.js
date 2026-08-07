@@ -50,6 +50,16 @@ const MAX_VOICES = 54;
 // being so short it false-positives on ordinary startup latency (measured
 // 50-1200ms for a genuinely successful resume across real files/machines).
 const RESUME_TIMEOUT_MS = 600;
+// Below this rate, chunks are already big enough that render time is
+// rarely the bottleneck, and "drop it lower" wouldn't have much room left
+// to recommend anyway -- see _recordPerfSample.
+const PERF_CHECK_MIN_HZ = 30;
+const PERF_SAMPLE_WINDOW = 20;
+const PERF_MIN_SAMPLES = 10;
+// If rendering a chunk regularly eats more than this fraction of the real
+// time that chunk represents, the device is getting close to not keeping
+// up with the current update rate -- see _recordPerfSample.
+const PERF_STRAIN_RATIO = 0.5;
 
 class SlopgsSynth {
   constructor({ wasmUrl, dlsUrl }) {
@@ -81,6 +91,13 @@ class SlopgsSynth {
     this.onError = null;
     this._seekGeneration = 0;
     this._seekingCount = 0;
+    // Rolling window of (render+convert work time / audio time it produced)
+    // ratios -- see _recordPerfSample. Only meaningful at higher update
+    // rates (small chunks, frequent renders); reset whenever the rate
+    // changes so a stale reading from the old rate never lingers.
+    this._perfSamples = [];
+    this.perfStrained = false;
+    this.onPerfChange = null;
     // False until msgs_init has actually run -- either from a same-directory
     // gm.dls fetched in load(), or from bytes handed in later via
     // initWithDls() (e.g. a drag-and-dropped file). Nothing can play before
@@ -199,6 +216,39 @@ class SlopgsSynth {
     const clamped = Math.max(MIN_CHUNK_SECONDS, Math.min(MAX_CHUNK_SECONDS, sec));
     this.chunkSeconds = clamped;
     if (this.sampleRate) this.chunkFrames = Math.max(1, Math.floor(this.sampleRate * clamped));
+    // A new rate gets a clean slate rather than averaging in samples taken
+    // at the old one -- also clears an existing strain flag immediately
+    // (dropping the rate is the fix, so the hint should disappear the
+    // instant that happens, not linger for another ~PERF_SAMPLE_WINDOW
+    // chunks until old samples age out).
+    this._perfSamples.length = 0;
+    if (this.perfStrained) {
+      this.perfStrained = false;
+      if (this.onPerfChange) this.onPerfChange(false);
+    }
+  }
+
+  /**
+   * Tracks how much of a rendered chunk's own real-time duration the work
+   * of actually rendering + converting it just cost -- e.g. a chunk
+   * representing 16.7ms of audio (60Hz) that took 10ms of wall-clock CPU
+   * time to produce is running at a ratio of 0.6, uncomfortably close to
+   * 1.0 (where the device can no longer keep up at all). A sustained high
+   * ratio, not a single slow chunk (a GC pause, a tab backgrounding), is
+   * what actually indicates the chosen update rate is too demanding for
+   * this device -- hence the rolling average over PERF_MIN_SAMPLES+.
+   */
+  _recordPerfSample(workMs, audioMs) {
+    if (audioMs <= 0) return;
+    this._perfSamples.push(workMs / audioMs);
+    if (this._perfSamples.length > PERF_SAMPLE_WINDOW) this._perfSamples.shift();
+    if (this._perfSamples.length < PERF_MIN_SAMPLES) return;
+    const avg = this._perfSamples.reduce((a, b) => a + b, 0) / this._perfSamples.length;
+    const strained = avg > PERF_STRAIN_RATIO;
+    if (strained !== this.perfStrained) {
+      this.perfStrained = strained;
+      if (this.onPerfChange) this.onPerfChange(strained);
+    }
   }
 
   /**
@@ -508,6 +558,8 @@ class SlopgsSynth {
       // same terms getPositionSec() uses -- needed to tag the voice-history
       // sample below with a position the UI can actually look up later.
       const chunkStartSongSec = this.basePositionSamples / sampleRate + (this.nextStartTime - this.playStartCtxTime);
+      const perfCheck = 1 / this.chunkSeconds >= PERF_CHECK_MIN_HZ;
+      const workStart = perfCheck ? performance.now() : 0;
       const n = exp.msgs_render(outPtr, this.chunkFrames) >>> 0;
       if (n > 0) {
         const pcm = new Int16Array(exp.memory.buffer, outPtr, n * 2);
@@ -518,6 +570,7 @@ class SlopgsSynth {
           l[i] = pcm[2 * i] / 32768;
           r[i] = pcm[2 * i + 1] / 32768;
         }
+        if (perfCheck) this._recordPerfSample(performance.now() - workStart, (n / sampleRate) * 1000);
         const node = ctx.createBufferSource();
         node.buffer = buf;
         node.connect(this.gain);

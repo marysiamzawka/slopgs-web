@@ -210,21 +210,6 @@ button {
   margin: 0.6rem 0 0;
 }
 
-/* A <select>'s closed-state box sizes to its widest <option> by default in
- * most browsers, not to whatever's actually showing -- with a long title
- * among the options this pulls the whole control wider than the dropzone
- * and off-center. Clamp it and ellipsis the overflow instead. */
-#demoSelect {
-  display: inline-block;
-  max-width: 100%;
-  width: 15rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: center;
-  vertical-align: top;
-}
-
 #forgetDlsBtn {
   margin-left: 0.9rem;
 }
@@ -252,6 +237,152 @@ button {
   opacity: 0.4;
   text-decoration: none;
   cursor: default;
+}
+
+/* ----------------------------------------------------------- demo picker */
+
+/* position: fixed (not absolute-within-#rollWrap like the other overlays
+ * here) and a viewport-unit height cap on the panel below -- deliberately,
+ * not just a style choice: #rollWrap's own height comes from flex:1 with
+ * no explicit value, and a percentage-height descendant several levels
+ * into a flex ancestor chain like that resolves inconsistently (and on
+ * the stacked mobile layout, #rollWrap can be genuinely too short to hold
+ * six songs regardless). Pinning to the viewport sidesteps the whole
+ * problem instead of fighting it, which also happens to be the more
+ * correct choice for an actual modal picker vs. this file's other,
+ * roll-area-scoped status overlays. */
+.demo-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(16, 18, 22, 0.92);
+}
+/* Same [hidden]-vs-class-specificity issue as elsewhere in this file. */
+.demo-picker:not([hidden]) {
+  display: flex;
+}
+
+.demo-picker__panel {
+  width: 100%;
+  max-width: 440px;
+  max-height: min(80vh, 560px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--grid-line);
+  border-radius: 4px;
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    inset 0 -1px 0 var(--bevel-dark),
+    0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.demo-picker__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--grid-line);
+}
+.demo-picker__title {
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+.demo-picker__source {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+.demo-picker__source a {
+  color: var(--blue-text);
+}
+.demo-picker__source a:hover {
+  color: var(--amber);
+}
+.demo-picker__close {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-faint);
+  background: var(--panel-raised);
+  border: none;
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 var(--bevel-light), inset 0 -1px 0 var(--bevel-dark);
+  cursor: pointer;
+}
+.demo-picker__close:hover {
+  color: var(--text);
+}
+.demo-picker__close:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.demo-picker__list {
+  list-style: none;
+  margin: 0;
+  padding: 0.4rem;
+}
+
+.demo-picker__song {
+  padding: 0.55rem 0.6rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.demo-picker__song:hover {
+  background: var(--panel-raised);
+}
+.demo-picker__song:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: -2px;
+}
+.demo-picker__song + .demo-picker__song {
+  border-top: 1px solid var(--grid-line);
+}
+
+.demo-picker__song-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.demo-picker__song-by {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.demo-picker__song-by a {
+  color: var(--blue-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.demo-picker__song-by a:hover {
+  color: var(--amber);
+}
+
+.demo-picker__song-link {
+  display: inline-block;
+  margin-top: 0.15rem;
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.demo-picker__song-link:hover {
+  color: var(--amber);
+}
+.demo-picker__song-by a:focus-visible,
+.demo-picker__song-link:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
 }
 
 .dragover-overlay {
@@ -503,8 +634,7 @@ button {
 .voice-meter__settings {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .voice-meter__settings label {
@@ -513,7 +643,13 @@ button {
   cursor: help;
 }
 
+/* Pushes the select to the row's right edge regardless of whatever sits
+ * between it and the label (just the label most rows, label + the perf
+ * hint on Update rate) -- the same "two groups, space-between" result
+ * justify-content: space-between would give for exactly two children,
+ * without needing a wrapper element to keep label+hint together as one. */
 .voice-meter__settings select {
+  margin-left: auto;
   font-family: var(--font-mono);
   font-size: 0.66rem;
   color: var(--text-dim);
@@ -527,6 +663,19 @@ button {
 .voice-meter__settings select:focus-visible {
   outline: 2px solid var(--amber);
   outline-offset: 1px;
+}
+
+/* Only ever shown when synth.js's own render-time tracking flags the
+ * current update rate as straining this device -- see app.js's
+ * synth.onPerfChange. The warning text itself lives in the title attribute
+ * (a real tooltip, per the brief) rather than as visible copy, so the
+ * common case (never shown) costs the layout nothing. */
+.voice-meter__perf-hint {
+  flex: none;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: var(--amber);
+  cursor: help;
 }
 
 .voice-meter__label {
@@ -667,10 +816,11 @@ button {
  * channel right now, same idea as the sidebar's global VOICES meter but
  * per row and coarse (small lit squares, not a number) so it reads at a
  * glance without competing with the patch name for attention. Its own row
- * below the name/mute/solo line, indented to align under the patch name
- * (same convention as .drum-grid above) -- packed into that line as
- * another column, it and a long patch name would clip each other. Skipped
- * entirely for the drum channel, whose per-key grid already covers this. */
+ * below the meter stack, indented to align under the patch name (same
+ * convention as .drum-grid and .channel-row__meter) -- packed into the
+ * name/mute/solo line as another column, it and a long patch name would
+ * clip each other. Skipped entirely for the drum channel, whose per-key
+ * grid already covers this. */
 .channel-row__voices {
   display: flex;
   align-items: center;
@@ -678,13 +828,12 @@ button {
   margin-top: 0.35rem;
   padding-left: calc(8px + 3.4rem + 0.45rem * 2);
 }
-/* Squares fill the row's own width rather than sitting in a fixed-size
- * clump -- capped so they stay squares-ish on a wide sidebar instead of
- * turning into fat blocks once there's more row than there are squares. */
+/* Fixed-size squares -- more of them is what reads as finer resolution;
+ * stretching a handful of squares to fill the row just makes fatter
+ * squares, not a more precise meter. */
 .voice-sq {
-  flex: 1 1 0;
-  min-width: 3px;
-  max-width: 16px;
+  flex: none;
+  width: 5px;
   height: 5px;
   border-radius: 1px;
   background: var(--bg);
@@ -700,6 +849,77 @@ button {
   font-family: var(--font-mono);
   font-size: 0.58rem;
   color: var(--text-faint);
+}
+
+/* Volume/pan/pitch, one "icon [======bar======]" row each -- same indent
+ * and width as the voice squares below them (calc(8px + 3.4rem +
+ * 0.45rem*2), the drum-grid/voices convention), so the whole sub-info
+ * stack under the name/mute/solo line shares one left edge and one right
+ * edge instead of each row picking its own width. */
+.channel-row__meter {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+  padding-left: calc(8px + 3.4rem + 0.45rem * 2);
+}
+.channel-row__meter-icon {
+  flex: none;
+  width: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-faint);
+}
+.channel-row__meter-bar {
+  position: relative;
+  flex: 1;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--bg);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+/* Bipolar meters (pan, pitch) get a center-of-range tick; volume is a
+ * plain 0..1 level with no equivalent "center" landmark to mark. */
+.channel-row__meter-bar--bipolar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+/* Always a full-size box, clipped down to whatever slice should actually
+ * be visible -- same technique as the sidebar's own VOICES meter fill,
+ * and animating clip-path here for the same reason: animating width/left
+ * directly (this used to) forces a layout pass on every update, and with
+ * up to three of these per channel row refreshing on every transport
+ * poll, that's real layout thrash clip-path (paint/composite only) avoids. */
+.channel-row__meter-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--ch-color, var(--blue));
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 0.12s linear;
+}
+/* "LR" / "+0" -- shown instead of the fill when a bipolar meter is sitting
+ * dead at its center, where the fill itself would otherwise be an
+ * easy-to-miss zero-width sliver. Cleared (not hidden) once there's a real
+ * deviation to show; see setBipolarMeter in app.js. */
+.channel-row__meter-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  pointer-events: none;
 }
 
 .drum-grid__chip {
@@ -721,64 +941,21 @@ button {
   box-shadow: none;
 }
 
-.channel-row__swatch {
-  position: relative;
+/* A static per-channel color key -- a plain identity marker now that
+ * volume lives in the meter stack below as its own bar, not a fixed
+ * swatch doubling as a live level meter. */
+.channel-row__dot {
+  flex: none;
   width: 8px;
-  height: 18px;
-  border-radius: 1px;
-  background: var(--bg);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
-  overflow: hidden;
-}
-
-/* Live channel-volume (CC7) level, bottom-anchored -- how full this bar
- * reads is "how loud this channel's mixer fader currently is", refreshed
- * every transport tick. clip-path avoids animating height/layout. */
-.channel-row__swatch-fill {
-  position: absolute;
-  inset: 0;
-  clip-path: inset(0% 0 0 0);
-  transition: clip-path 0.12s linear;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.35);
 }
 
 .channel-row__num {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--text-dim);
-}
-
-/* Live pan (CC10), directly under the volume swatch + "CH xx" text --
- * exactly their combined width, not the row's, since this reads as
- * belonging to that same little "channel identity" strip rather than to
- * the patch name/mute/solo line beside it. A center tick marks 0; the fill
- * grows from there toward whichever side the channel's actually panned
- * to, tinted with the row's own --ch-color like the voice squares below. */
-.channel-row__pan {
-  position: relative;
-  width: calc(8px + 3.4rem + 0.45rem);
-  height: 4px;
-  margin-top: 0.3rem;
-  border-radius: 1px;
-  background: var(--bg);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
-  overflow: hidden;
-}
-.channel-row__pan::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: rgba(255, 255, 255, 0.22);
-}
-.channel-row__pan-fill {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 0;
-  background: var(--ch-color, var(--blue));
 }
 
 .channel-row__patch {

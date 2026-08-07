@@ -25,10 +25,21 @@
           <button type="button" id="forgetDlsBtn" class="linklike" hidden>or pick a different file</button>
           <input type="file" id="fileInput" accept=".mid,.midi,audio/midi" hidden>
           <p class="dropzone__demo">
-            <select id="demoSelect" class="linklike" aria-label="Try a demo song">
-              <option value="" selected>or try a demo song…</option>
-            </select>
+            <button type="button" id="demoToggleBtn" class="linklike">or try a demo song</button>
           </p>
+        </div>
+      </div>
+
+      <div class="demo-picker" id="demoPicker" hidden>
+        <div class="demo-picker__panel">
+          <div class="demo-picker__header">
+            <div>
+              <p class="demo-picker__title">Demo songs</p>
+              <p class="demo-picker__source">All from <a href="https://battleofthebits.com/" target="_blank" rel="noopener noreferrer">battleofthebits.com</a>, <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/" target="_blank" rel="noopener noreferrer">CC BY-NC-SA 3.0</a></p>
+            </div>
+            <button type="button" id="demoCloseBtn" class="demo-picker__close" aria-label="Close demo song picker">&times;</button>
+          </div>
+          <ul class="demo-picker__list" id="demoPickerList"></ul>
         </div>
       </div>
 
@@ -59,14 +70,15 @@
         </div>
         <div class="voice-meter__settings">
           <label for="updateRateSelect" title="How often the voice meter (and audio scheduling) updates, per second. Higher = more responsive, more CPU/JS overhead. Lower = smoother-running, coarser updates. 60Hz matches the piano roll's own frame rate -- the fastest rate that's ever visually distinguishable.">Update rate</label>
+          <span class="voice-meter__perf-hint" id="perfHint" hidden title="Playback seems to be straining at this rate -- try dropping it lower.">⚠</span>
           <select id="updateRateSelect">
             <option value="1">1 Hz</option>
-            <option value="2" selected>2 Hz</option>
+            <option value="2">2 Hz</option>
             <option value="5">5 Hz</option>
             <option value="10">10 Hz</option>
             <option value="20">20 Hz</option>
             <option value="30">30 Hz</option>
-            <option value="60">60 Hz</option>
+            <option value="60" selected>60 Hz</option>
           </select>
         </div>
         <div class="voice-meter__settings">

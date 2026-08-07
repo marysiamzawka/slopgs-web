@@ -13,7 +13,10 @@
   const fileInput = document.getElementById("fileInput");
   const browseBtn = document.getElementById("browseBtn");
   const forgetDlsBtn = document.getElementById("forgetDlsBtn");
-  const demoSelect = document.getElementById("demoSelect");
+  const demoToggleBtn = document.getElementById("demoToggleBtn");
+  const demoPicker = document.getElementById("demoPicker");
+  const demoCloseBtn = document.getElementById("demoCloseBtn");
+  const demoPickerList = document.getElementById("demoPickerList");
   const statusBanner = document.getElementById("statusBanner");
   const dropHint = document.getElementById("dropHint");
 
@@ -29,6 +32,7 @@
   const voiceMeterFill = document.getElementById("voiceMeterFill");
   const voiceCountEl = document.getElementById("voiceCount");
   const updateRateSelect = document.getElementById("updateRateSelect");
+  const perfHint = document.getElementById("perfHint");
   const rollSpeedSelect = document.getElementById("rollSpeedSelect");
 
   const playBtn = document.getElementById("playBtn");
@@ -145,8 +149,8 @@
    * everywhere else in this UI (see .status-banner's real uses: a failed
    * wasm load, a rejected permission, an actually-bad file). */
   function updateDropzoneMode() {
-    demoSelect.disabled = !synthReady;
-    demoSelect.options[0].textContent = synthReady ? "or try a demo song…" : "add gm.dls to try a demo song";
+    demoToggleBtn.disabled = !synthReady;
+    demoToggleBtn.textContent = synthReady ? "or try a demo song" : "add gm.dls to try a demo song";
 
     if (rememberedDlsHandle) {
       dropzoneTitleEl.textContent = "Use your gm.dls from last time?";
@@ -302,6 +306,44 @@
 
   // -- channel sidebar --
 
+  /**
+   * One row of the "♪ [=====bar=====]" shape -- shared by the volume, pan,
+   * and pitch meters so all three stay pixel-identical. `fillClass` is a
+   * second class on the fill element (alongside the shared
+   * .channel-row__meter-fill) that updateChannelList later selects by, the
+   * same querySelector-by-class pattern the rest of this row already uses.
+   * `labelClass` is omitted for volume (a plain level has no meaningful
+   * "default" landmark worth a watermark the way pan's center or pitch's
+   * rest position do) and present for pan/pitch, which also get the center
+   * tick via .channel-row__meter-bar--bipolar.
+   */
+  function buildMeterRow(icon, fillClass, labelClass, titleText) {
+    const row = document.createElement("div");
+    row.className = "channel-row__meter";
+
+    const iconEl = document.createElement("span");
+    iconEl.className = "channel-row__meter-icon";
+    iconEl.textContent = icon;
+    iconEl.setAttribute("aria-hidden", "true");
+
+    const bar = document.createElement("span");
+    bar.className = labelClass ? "channel-row__meter-bar channel-row__meter-bar--bipolar" : "channel-row__meter-bar";
+    bar.title = titleText;
+
+    const fill = document.createElement("span");
+    fill.className = `channel-row__meter-fill ${fillClass}`;
+    bar.appendChild(fill);
+
+    if (labelClass) {
+      const label = document.createElement("span");
+      label.className = `channel-row__meter-label ${labelClass}`;
+      bar.appendChild(label);
+    }
+
+    row.append(iconEl, bar);
+    return row;
+  }
+
   function buildChannelList(data) {
     channelList.innerHTML = "";
     perChannelNotes = new Map();
@@ -321,16 +363,13 @@
       const main = document.createElement("div");
       main.className = "channel-row__main";
 
-      const swatch = document.createElement("span");
-      swatch.className = "channel-row__swatch";
-      swatch.title = "Channel volume (CC7)";
-      const swatchFill = document.createElement("span");
-      swatchFill.className = "channel-row__swatch-fill";
-      swatchFill.style.background = channelSwatchColor(ch);
-      swatch.appendChild(swatchFill);
-      // Lets the voice-count squares below borrow this same per-channel hue
-      // (var(--ch-color) in styles.css) instead of one flat color for every
-      // channel -- inherits down to them since custom properties do.
+      const dot = document.createElement("span");
+      dot.className = "channel-row__dot";
+      dot.style.background = channelSwatchColor(ch);
+      // Lets the meter fills and voice-count squares below borrow this same
+      // per-channel hue (var(--ch-color) in styles.css) instead of one flat
+      // color for everything -- inherits down to them since custom
+      // properties do.
       li.style.setProperty("--ch-color", channelSwatchColor(ch));
 
       const num = document.createElement("span");
@@ -365,22 +404,21 @@
         applyMuteSolo();
       });
 
-      main.append(swatch, num, patch, muteBtn, soloBtn);
+      main.append(dot, num, patch, muteBtn, soloBtn);
       li.appendChild(main);
 
-      // Live pan (CC10) -- a thin bar under the volume swatch and "CH xx"
-      // text specifically (not the full row width, which is already the
-      // patch name/mute/solo's own space), filling from its own center tick
-      // toward whichever side the channel is actually panned to. Center
-      // (the GM default, and where most channels that never send CC10
-      // sit) shows as just the tick with no visible fill.
-      const pan = document.createElement("div");
-      pan.className = "channel-row__pan";
-      pan.title = "Pan (CC10)";
-      const panFill = document.createElement("span");
-      panFill.className = "channel-row__pan-fill";
-      pan.appendChild(panFill);
-      li.appendChild(pan);
+      // Live volume/pan/pitch, one horizontal bar each, same width and
+      // indent as the voice squares below (see buildMeterRow) -- narrower
+      // than that (e.g. squeezed under just the dot+CH-xx column, as pan
+      // alone used to be) didn't leave enough room to actually read a
+      // bipolar deviation at a glance. Pan and pitch fill from a center
+      // tick and swap in a plain-language label ("LR", "+0") when they're
+      // sitting dead at their default instead of showing a zero-width sliver.
+      li.append(
+        buildMeterRow("♪", "channel-row__vol-fill", null, "Volume (CC7)"),
+        buildMeterRow("↔", "channel-row__pan-fill", "channel-row__pan-label", "Pan (CC10)"),
+        buildMeterRow("↕", "channel-row__pitch-fill", "channel-row__pitch-label", "Pitch bend")
+      );
 
       if (ch === 9) {
         // The drum grid below already is a per-key activity readout with its
@@ -484,12 +522,12 @@
   const MIN_FLASH_SEC = 0.18;
   // How many of the per-channel voice-count squares to actually render --
   // beyond this, a row switches to a "+N" overflow label instead of a wall
-  // of squares that would blow out the sidebar's fixed width. Lives on its
-  // own full-width row (see buildChannelList) so there's room for more than
-  // a melodic channel plays outside a very thick chord; the drum channel
-  // never renders this row at all -- its per-key grid already shows the
-  // same "what's sounding right now" information more precisely.
-  const VOICE_SQUARE_CAP = 10;
+  // of squares that would blow out the sidebar's fixed width. Fixed-size
+  // squares (see styles.css), not stretched to fill the row -- more of them
+  // is what reads as "higher resolution," not fatter individual boxes. The
+  // drum channel never renders this row at all -- its per-key grid already
+  // shows the same "what's sounding right now" information more precisely.
+  const VOICE_SQUARE_CAP = 16;
 
   /** How many notes in `notes` are sounding (or recently-enough-struck to
    * still read as active, see MIN_FLASH_SEC) at time t -- the shared
@@ -522,6 +560,37 @@
     return countActiveInWindow(perDrumKeyNotes.get(key), t) > 0;
   }
 
+  // A value close enough to 0 that it reads as "no deviation at all" rather
+  // than a barely-visible sliver of fill -- both pan and pitch bend are
+  // floats derived from a 7/14-bit MIDI value, so exact 0 is common (the GM
+  // default, or an explicit center message) but not the only thing that
+  // should count as centered.
+  const METER_CENTER_EPSILON = 0.004;
+
+  /** Fills `.channel-row__${kind}-fill` outward from its bar's center tick,
+   * and shows `centerLabel` in `.channel-row__${kind}-label` instead of a
+   * near-invisible fill when `value` is at (or essentially at) 0. Uses
+   * clip-path on an always-full-size element rather than animating
+   * width/left directly -- see the CSS comment on .channel-row__meter-fill
+   * for why (this is the same layout-thrash-avoidance clip-path already
+   * gets everywhere else in this file, e.g. updateVoiceMeter's fill). */
+  function setBipolarMeter(row, kind, value, centerLabel) {
+    const v = Math.max(-1, Math.min(1, value));
+    const fillEl = row.querySelector(`.channel-row__${kind}-fill`);
+    const labelEl = row.querySelector(`.channel-row__${kind}-label`);
+    if (Math.abs(v) < METER_CENTER_EPSILON) {
+      fillEl.style.clipPath = "inset(0 50% 0 50%)";
+      labelEl.textContent = centerLabel;
+      return;
+    }
+    labelEl.textContent = "";
+    if (v >= 0) {
+      fillEl.style.clipPath = `inset(0 ${50 - v * 50}% 0 50%)`;
+    } else {
+      fillEl.style.clipPath = `inset(0 50% 0 ${50 + v * 50}%)`;
+    }
+  }
+
   function updateChannelList(t) {
     for (const row of channelList.children) {
       const ch = Number(row.dataset.channel);
@@ -534,24 +603,22 @@
       const activeCount = countActiveInWindow(perChannelNotes.get(ch), t);
       row.classList.toggle("is-active", activeCount > 0);
 
+      // Volume is unipolar (0..1, GM default ~0.79) -- a plain left-anchored
+      // level, same shape as the sidebar's own overall VOICES meter.
       const vol = valueAt(currentData.channelVolumes.get(ch), t, { value: GM_DEFAULT_CHANNEL_VOLUME }).value;
-      const fillEl = row.querySelector(".channel-row__swatch-fill");
-      fillEl.style.clipPath = `inset(${(1 - vol) * 100}% 0 0 0)`;
+      const volPct = Math.max(0, Math.min(1, vol)) * 100;
+      row.querySelector(".channel-row__vol-fill").style.clipPath = `inset(0 ${100 - volPct}% 0 0)`;
 
-      // GM's default when a file never sends CC10 is dead center (0), same
-      // fallback convention as channel volume's own default above -- fills
-      // from the bar's center tick outward toward whichever side is panned;
-      // center itself renders as just the tick, no visible fill.
+      // Pan and pitch are both bipolar (-1..1) around a meaningful center --
+      // true stereo center for pan, no bend at all for pitch -- so both fill
+      // outward from the bar's center tick and swap in a plain-language
+      // label ("LR", "+0") for "sitting dead at that center" instead of a
+      // zero-width sliver nobody would notice.
       const pan = valueAt(currentData.channelPans.get(ch), t, { value: 0 }).value;
-      const panFillEl = row.querySelector(".channel-row__pan-fill");
-      const halfPct = Math.max(-1, Math.min(1, pan)) * 50;
-      if (halfPct >= 0) {
-        panFillEl.style.left = "50%";
-        panFillEl.style.width = `${halfPct}%`;
-      } else {
-        panFillEl.style.left = `${50 + halfPct}%`;
-        panFillEl.style.width = `${-halfPct}%`;
-      }
+      setBipolarMeter(row, "pan", pan, "LR");
+
+      const bend = valueAt(currentData.pitchBends.get(ch), t, { value: 0 }).value;
+      setBipolarMeter(row, "pitch", bend, "+0");
 
       if (ch === 9) {
         const grid = row.querySelector(".drum-grid");
@@ -943,37 +1010,113 @@
     showDlsPrompt();
   });
 
-  // Bundled with this repo, all CC BY-NC-SA 3.0 -- see demo/CREDITS.md for
-  // full attribution on each. Loading one goes through the exact same
-  // loadFile path as any dropped file (constructed as a real File so
-  // nothing here needs a separate code path), which means it also queues
-  // correctly behind the gm.dls prompt if that hasn't been resolved yet.
+  // Bundled with this repo, all CC BY-NC-SA 3.0, all from battleofthebits.com
+  // -- see demo/CREDITS.md for the same attribution in plain-file form.
+  // entryId is that BotB entry's own numeric ID (battleofthebits.com/
+  // barracks/Entry/View/<id>/); each artist's `slug` is their BotB username
+  // as it appears in the URL (battleofthebits.com/barracks/Profile/<slug>/).
+  // General Serum alone credits two people -- artists is an array so that
+  // row can link both names independently instead of picking just one.
   const DEMO_SONGS = [
-    { file: "vonotron-assembler.mid", title: "Vonotron Assembler", artist: "Strobe" },
-    { file: "nyrmodian-bird-park.mid", title: "Nyrmodian Bird Park", artist: "pigdevil2010" },
-    { file: "general-serum.mid", title: "~ GENERAL SERUM ~", artist: "Kot and A64" },
-    { file: "transcendental.mid", title: "transcendental", artist: "A64" },
-    { file: "midian-city-nightclub.mid", title: "Midian City Nightclub", artist: "Strobe" },
-    { file: "domestic-droid-rights-foundation.mid", title: "Domestic Droid Rights Foundation", artist: "Strobe" },
+    { file: "vonotron-assembler.mid", title: "Vonotron Assembler", entryId: 30336, artists: [{ name: "Strobe", slug: "Strobe" }] },
+    { file: "nyrmodian-bird-park.mid", title: "Nyrmodian Bird Park", entryId: 27317, artists: [{ name: "pigdevil2010", slug: "pigdevil2010" }] },
+    { file: "general-serum.mid", title: "~ GENERAL SERUM ~", entryId: 60184, artists: [{ name: "Kot", slug: "Kot" }, { name: "A64", slug: "A64" }] },
+    { file: "transcendental.mid", title: "transcendental", entryId: 69940, artists: [{ name: "A64", slug: "A64" }] },
+    { file: "midian-city-nightclub.mid", title: "Midian City Nightclub", entryId: 10285, artists: [{ name: "Strobe", slug: "Strobe" }] },
+    { file: "domestic-droid-rights-foundation.mid", title: "Domestic Droid Rights Foundation", entryId: 5026, artists: [{ name: "Strobe", slug: "Strobe" }] },
   ];
-  for (const song of DEMO_SONGS) {
-    const opt = document.createElement("option");
-    opt.value = song.file;
-    opt.textContent = `"${song.title}" -- ${song.artist}`;
-    demoSelect.appendChild(opt);
-  }
-  demoSelect.addEventListener("change", async () => {
-    const chosen = DEMO_SONGS.find((s) => s.file === demoSelect.value);
-    demoSelect.selectedIndex = 0; // back to the placeholder -- this is a picker, not a persistent selection
-    if (!chosen) return;
+  const BOTB_ENTRY_URL = (id) => `https://battleofthebits.com/barracks/Entry/View/${id}/`;
+  const BOTB_PROFILE_URL = (slug) => `https://battleofthebits.com/barracks/Profile/${slug}/`;
+
+  /** Loads one demo song -- the exact same loadFile path as any dropped
+   * file (constructed as a real File so nothing here needs a separate code
+   * path), which means it also queues correctly behind the gm.dls prompt
+   * if that hasn't been resolved yet. */
+  async function loadDemoSong(song) {
+    demoPicker.hidden = true;
     try {
-      const resp = await fetch(`demo/${chosen.file}`);
+      const resp = await fetch(`demo/${song.file}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const buf = await resp.arrayBuffer();
-      const file = new File([buf], `${chosen.title} - ${chosen.artist}.mid`);
+      const artistNames = song.artists.map((a) => a.name).join(" & ");
+      const file = new File([buf], `${song.title} - ${artistNames}.mid`);
       loadFile(file);
     } catch (err) {
       showBanner(`Couldn't load the demo song: ${err.message || err}`, "error");
     }
+  }
+
+  // Built once at boot, not per file-load -- the list never depends on
+  // whatever's currently playing.
+  for (const song of DEMO_SONGS) {
+    const li = document.createElement("li");
+    li.className = "demo-picker__song";
+    li.tabIndex = 0;
+    li.setAttribute("role", "button");
+    li.setAttribute("aria-label", `Load demo song ${song.title}`);
+
+    const titleRow = document.createElement("p");
+    titleRow.className = "demo-picker__song-title";
+    titleRow.textContent = song.title;
+    const by = document.createElement("span");
+    by.className = "demo-picker__song-by";
+    by.append(" by ");
+    song.artists.forEach((artist, i) => {
+      if (i > 0) by.append(" & ");
+      const link = document.createElement("a");
+      link.href = BOTB_PROFILE_URL(artist.slug);
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = artist.name;
+      by.appendChild(link);
+    });
+    titleRow.appendChild(by);
+
+    const entryLink = document.createElement("a");
+    entryLink.className = "demo-picker__song-link";
+    entryLink.href = BOTB_ENTRY_URL(song.entryId);
+    entryLink.target = "_blank";
+    entryLink.rel = "noopener noreferrer";
+    entryLink.textContent = "view on battleofthebits.com ↗";
+
+    li.append(titleRow, entryLink);
+
+    // The row itself loads the song; the artist and entry links inside it
+    // need to navigate instead -- letting the click bubble up unchecked
+    // would do both at once. Nothing needs stopPropagation for that: there's
+    // only this one listener, so just don't treat a click that started on
+    // an <a> as "load this song."
+    li.addEventListener("click", (e) => {
+      if (e.target.closest("a")) return;
+      loadDemoSong(song);
+    });
+    li.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        loadDemoSong(song);
+      }
+    });
+
+    demoPickerList.appendChild(li);
+  }
+
+  demoToggleBtn.addEventListener("click", () => {
+    demoPicker.hidden = false;
   });
+  demoCloseBtn.addEventListener("click", () => {
+    demoPicker.hidden = true;
+  });
+  demoPicker.addEventListener("click", (e) => {
+    if (e.target === demoPicker) demoPicker.hidden = true; // clicked the dimmed backdrop, not the panel
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !demoPicker.hidden) demoPicker.hidden = true;
+  });
+
+  // -- perf hint: only worth surfacing at the higher update rates where a
+  // slower device could plausibly struggle to keep up (see synth.js's
+  // PERF_CHECK_MIN_HZ, which gates whether it even measures) --
+  synth.onPerfChange = (strained) => {
+    perfHint.hidden = !strained;
+  };
 })();
