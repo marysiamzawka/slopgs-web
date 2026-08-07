@@ -136,23 +136,37 @@
   /** Reflects needsDls/rememberedDlsHandle/synthReady into the dropzone's
    * copy and what its browse link/hidden input do. A remembered handle
    * takes priority over the plain needsDls prompt whenever both are true. */
+  /** Everything about the gm.dls prompt (title, hint, browse label, whether
+   * a demo song can even be picked yet) lives in this one dark dropzone
+   * box -- no separate banner. A routine "you haven't given me gm.dls yet"
+   * first-run step isn't an error or a warning, and the amber status
+   * banner reads as one at a glance; it was firing for this on every
+   * single first visit, which is the opposite of what that color means
+   * everywhere else in this UI (see .status-banner's real uses: a failed
+   * wasm load, a rejected permission, an actually-bad file). */
   function updateDropzoneMode() {
+    demoSelect.disabled = !synthReady;
+    demoSelect.options[0].textContent = synthReady ? "or try a demo song…" : "add gm.dls to try a demo song";
+
     if (rememberedDlsHandle) {
       dropzoneTitleEl.textContent = "Use your gm.dls from last time?";
       dropHint.textContent = rememberedDlsHandle.name;
       browseBtn.textContent = "Use remembered gm.dls";
+      browseBtn.title = "Nothing about the file was stored, only your browser's permission to re-open it.";
       forgetDlsBtn.hidden = false;
       fileInput.accept = ".dls";
     } else if (needsDls) {
       dropzoneTitleEl.textContent = "Drop your gm.dls file here";
-      dropHint.textContent = "Used only in this tab -- never saved to disk";
+      dropHint.textContent = "Used only in this tab, never saved to disk. Get it from C:\\Windows\\System32\\gm.dls on a Windows install, or wherever you've got one.";
       browseBtn.textContent = "browse for gm.dls instead";
+      browseBtn.title = "";
       forgetDlsBtn.hidden = true;
       fileInput.accept = ".dls";
     } else {
       dropzoneTitleEl.textContent = "Drop a .mid file";
       dropHint.textContent = synthReady ? "Drag a .mid file here" : "Loading synth engine…";
       browseBtn.textContent = "browse a file instead";
+      browseBtn.title = "";
       forgetDlsBtn.hidden = true;
       fileInput.accept = ".mid,.midi,audio/midi";
     }
@@ -160,18 +174,8 @@
 
   function showDlsPrompt() {
     needsDls = true;
+    hideBanner(); // this state has its own explanation in the dropzone box now, not a banner
     updateDropzoneMode();
-    if (rememberedDlsHandle) {
-      showBanner(
-        `Click "${rememberedDlsHandle.name}" below to reuse the gm.dls you picked last time -- your browser needs to re-confirm access after a reload. Nothing about the file itself was ever stored here, only that permission.`,
-        "setup"
-      );
-    } else {
-      showBanner(
-        "gm.dls wasn't found next to this page. Drag your own gm.dls file in here (e.g. C:\\Windows\\System32\\drivers\\gm.dls on a Windows install, or wherever you've got one) to use it -- it stays in this browser tab only, never uploaded or written to disk, the same way dragging a font into Photopea makes it usable without ever leaving your machine.",
-        "setup"
-      );
-    }
   }
 
   /** @param {File} file @param {FileSystemFileHandle} [handle] pass this
