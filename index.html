@@ -17,6 +17,12 @@
     <section class="roll-wrap" id="rollWrap">
       <canvas id="roll" class="roll-canvas" role="img" aria-label="Piano roll: falling notes for the loaded MIDI file, synced to playback"></canvas>
 
+      <div class="lyrics-overlay" id="lyricsOverlay" hidden>
+        <p class="lyrics-overlay__line lyrics-overlay__line--prev" id="lyricPrev"></p>
+        <p class="lyrics-overlay__line lyrics-overlay__line--current" id="lyricCurrent" aria-live="polite"></p>
+        <p class="lyrics-overlay__line lyrics-overlay__line--next" id="lyricNext"></p>
+      </div>
+
       <div class="dropzone" id="dropzone">
         <div class="dropzone__inner">
           <p class="dropzone__title" id="dropzoneTitle">Drop a .mid file</p>

@@ -29,6 +29,12 @@ const MIN_LOOKAHEAD_SEC = 1.25;
 const MAX_LOOKAHEAD_SEC = 6.0;
 const IMPACT_Y_FRACTION = 0.82;
 const STRIKE_STRIP_PX = 30;
+// The band below these two -- from IMPACT_Y_FRACTION*height + STRIKE_STRIP_PX
+// down to the canvas's own bottom edge -- is never drawn into; it's blank
+// canvas. .lyrics-overlay in styles.css sits in that exact band (a plain
+// DOM element positioned over the canvas, not drawn by this file) using the
+// same two numbers, kept in sync by hand since both are effectively fixed
+// constants. If either changes, update that CSS rule's own top/comment too.
 const BEND_RANGE_SEMITONES = 2;
 const BURST_LIFETIME_MS = 320;
 

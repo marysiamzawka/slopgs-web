@@ -204,23 +204,31 @@ function looksLikeShiftJisBytes(bytes) {
  * BMS/BotB-adjacent files, old doujin sequences) and Windows-1252
  * (Western European packs) -- looksLikeShiftJisBytes decides which to try,
  * with Windows-1252 as the catch-all since it has no undecodable bytes.
+ * Untrimmed: most callers want decodeMetaText below, which trims for
+ * display, but lyric events (see parseMidiFile's lyricLines) need their
+ * whitespace -- a bare "\r" or a trailing space marking a word's end is
+ * exactly what a trim would throw away.
  */
-function decodeMetaText(bytes) {
+function decodeMetaBytes(bytes) {
   const utf8 = new TextDecoder("utf-8").decode(bytes);
-  if (!utf8.includes("�")) return utf8.trim();
+  if (!utf8.includes("�")) return utf8;
   if (looksLikeShiftJisBytes(bytes)) {
     try {
       const sjis = new TextDecoder("shift-jis").decode(bytes);
-      if (!sjis.includes("�")) return sjis.trim();
+      if (!sjis.includes("�")) return sjis;
     } catch {
       // shift-jis decoder unsupported in this environment -- fall through
     }
   }
   try {
-    return new TextDecoder("windows-1252").decode(bytes).trim();
+    return new TextDecoder("windows-1252").decode(bytes);
   } catch {
-    return utf8.trim();
+    return utf8;
   }
+}
+
+function decodeMetaText(bytes) {
+  return decodeMetaBytes(bytes).trim();
 }
 
 function readVLQ(bytes, pos) {
@@ -257,10 +265,11 @@ function walkTrack(bytes, start, len, emit) {
           numerator: bytes[pos.i],
           denominator: 1 << bytes[pos.i + 1],
         });
-      } else if ((type === 0x01 || type === 0x02 || type === 0x03 || type === 0x06) && mlen > 0) {
-        // Text, Copyright, TrackName, Marker -- the meta types that carry
-        // human-readable content worth surfacing in the UI. Kept as a raw
-        // byte view (no copy); decodeMetaText handles the encoding.
+      } else if ((type === 0x01 || type === 0x02 || type === 0x03 || type === 0x05 || type === 0x06) && mlen > 0) {
+        // Text, Copyright, TrackName, Lyric, Marker -- the meta types that
+        // carry human-readable content worth surfacing in the UI. Kept as a
+        // raw byte view (no copy); decodeMetaText/decodeMetaBytes handle
+        // the encoding.
         emit(absTick, { kind: "metatext", metaType: type, data: bytes.subarray(pos.i, pos.i + mlen) });
       }
       pos.i += mlen;
@@ -351,6 +360,7 @@ function computeBarTimes(timeSigEvents, totalTicks, divisionQ, tempoCheckpoints)
  *   copyright: string|null,
  *   text: string|null,
  *   markers: Array<{atSec:number, text:string}>,
+ *   lyricLines: Array<{atSec:number, text:string}>,
  * }}
  */
 function parseMidiFile(bytes) {
@@ -414,12 +424,33 @@ function parseMidiFile(bytes) {
   // Metadata surfaced in the UI between the piano roll and the transport.
   // Scoped to what real-world files actually carry (see decodeMetaText's
   // sibling scan of ~9600 files): TrackName is near-universal (85.7%),
-  // Copyright and Text both sit around 2.4%, Marker under 1%. Lyric and
-  // CuePoint appeared in zero files scanned and are skipped entirely.
+  // Copyright and Text both sit around 2.4%, Marker under 1%. Lyric was
+  // effectively absent from that general scan too -- but a targeted scan of
+  // two karaoke-oriented packs (MIDI DISCO POLO, Rzadko spotykane MIDI: 820
+  // files) found it in 782 of them (95%), so it earns support despite being
+  // rare in MIDI at large. CuePoint remains skipped: still unseen anywhere.
   let title = null;
   let copyright = null;
   let textNote = null;
   const markers = [];
+
+  // Lyric (0x05) events are per-syllable, not per-line -- a karaoke file
+  // sings "Sto" then "je " as two events, meant to read as one word "Stoje"
+  // (trailing spaces mark word ends; the events carry no line breaks of
+  // their own beyond an embedded \r or \n). These get concatenated into
+  // whole lines here as they're walked, each line timestamped to whenever
+  // its first syllable actually starts -- see lyricLines below and
+  // updateLyrics in app.js, which just needs to find "the line active at
+  // time t" the same way it already does for markers.
+  let lyricBuffer = "";
+  let lyricLineStartSec = null;
+  const lyricLines = [];
+  function flushLyricLine() {
+    const text = lyricBuffer.trim();
+    if (text) lyricLines.push({ atSec: lyricLineStartSec ?? 0, text });
+    lyricBuffer = "";
+    lyricLineStartSec = null;
+  }
 
   for (const e of events) {
     const deltaTicks = e.absTick - lastTick;
@@ -442,6 +473,21 @@ function parseMidiFile(bytes) {
       continue;
     }
     if (e.kind === "metatext") {
+      if (e.metaType === 0x05) {
+        // Lyric: not trimmed like the rest (see decodeMetaBytes) -- a break
+        // may be its own whole event ("\r" and nothing else), which a trim
+        // would erase before flushLyricLine ever saw it.
+        const raw = decodeMetaBytes(e.data);
+        const segments = raw.split(/[\r\n]+/);
+        for (let i = 0; i < segments.length; i++) {
+          if (i > 0) flushLyricLine(); // a break preceded this segment
+          if (segments[i]) {
+            if (lyricLineStartSec === null) lyricLineStartSec = atSec;
+            lyricBuffer += segments[i];
+          }
+        }
+        continue;
+      }
       const text = decodeMetaText(e.data);
       if (text) {
         if (e.metaType === 0x03) {
@@ -519,6 +565,7 @@ function parseMidiFile(bytes) {
       channelPans.get(channel).push({ atSec, value: (e.d2 - 64) / 64 });
     }
   }
+  flushLyricLine(); // catches a trailing line with no closing break -- common at EOF
 
   // Any note-on left without a matching note-off (malformed/truncated file):
   // close it at the last event's time rather than dropping it silently.
@@ -546,7 +593,7 @@ function parseMidiFile(bytes) {
   return {
     durationSec, notes, programChanges, pitchBends, channelsUsed, barTimes,
     noteOnVelocityOffsets, channelVolumes, channelBanks, channelPans,
-    title, copyright, text: textNote, markers,
+    title, copyright, text: textNote, markers, lyricLines,
   };
 }
 

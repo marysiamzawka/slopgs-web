@@ -26,6 +26,10 @@
   const metaMarkerText = document.getElementById("metaMarkerText");
 
   const rollCanvas = document.getElementById("roll");
+  const lyricsOverlay = document.getElementById("lyricsOverlay");
+  const lyricPrevEl = document.getElementById("lyricPrev");
+  const lyricCurrentEl = document.getElementById("lyricCurrent");
+  const lyricNextEl = document.getElementById("lyricNext");
   const channelList = document.getElementById("channelList");
   const sidebarEmpty = document.getElementById("sidebarEmpty");
   const voiceMeter = document.getElementById("voiceMeter");
@@ -809,6 +813,59 @@
     metabar.hidden = parts.length === 0 && !hasMarkers;
   }
 
+  // -- karaoke lyrics --
+
+  /** Resets/hides the piano roll's lyrics ticker for a freshly loaded file
+   * -- shown only for the minority of files that carry any SMF Lyric
+   * events at all (see lyricLines in midi.js); everyone else leaves the
+   * roll's own dead space exactly as blank as it's always been. */
+  function buildLyricsOverlay(data) {
+    lastLyricLineIndex = -2; // sentinel below 0/-1, guarantees the first updateLyrics call writes
+    lyricsOverlay.hidden = !(data.lyricLines && data.lyricLines.length > 0);
+    lyricPrevEl.textContent = "";
+    lyricCurrentEl.textContent = "";
+    lyricNextEl.textContent = "";
+  }
+
+  /** Index of the most-recently-started lyric line at or before `t`, or -1
+   * if the file's lyrics haven't started yet. Same binary-search shape as
+   * barIndexAt below -- kept separate since the two want different return
+   * conventions (a bar number vs. an array index with neighbors). */
+  function lyricLineIndexAt(lines, t) {
+    let lo = 0, hi = lines.length - 1, ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (lines[mid].atSec <= t) { ans = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    return ans;
+  }
+
+  let lastLyricLineIndex = -2;
+
+  /** Current line centered, one line of context dimmed above and below --
+   * refreshed on the same ~140ms poll as the rest of the transport (see
+   * updateTransport). Skips the DOM writes entirely when the active line
+   * hasn't changed since the last poll, same guard updateMetaMarker uses. */
+  function updateLyrics(t) {
+    if (!currentData || !currentData.lyricLines || currentData.lyricLines.length === 0) return;
+    const lines = currentData.lyricLines;
+    const idx = lyricLineIndexAt(lines, t);
+    if (idx === lastLyricLineIndex) return;
+    lastLyricLineIndex = idx;
+    const prev = idx > 0 ? lines[idx - 1].text : "";
+    const current = idx >= 0 ? lines[idx].text : "";
+    const next = idx + 1 < lines.length ? lines[idx + 1].text : "";
+    lyricPrevEl.textContent = prev;
+    lyricPrevEl.title = prev;
+    lyricCurrentEl.textContent = current;
+    lyricCurrentEl.title = current;
+    lyricNextEl.textContent = next;
+    lyricNextEl.title = next;
+  }
+
+  // -- metadata bar (marker readout) --
+
   /** Most-recent marker at or before the current position, refreshed on the
    * same ~140ms poll as the rest of the transport (see updateTransport). */
   function updateMetaMarker(t) {
@@ -911,6 +968,7 @@
     updateVoiceMeter(t);
     updateMetaMarker(t);
     updateBarCounter(t);
+    updateLyrics(t);
     // A deep seek (or resuming after a pause deep into a long file) can take
     // real wall-clock time to catch up -- msgs.wasm only rewinds to tick 0,
     // so reaching any later position means rendering through everything
@@ -1029,6 +1087,7 @@
       roll.setData(data);
       buildChannelList(data);
       buildMetaBar(data);
+      buildLyricsOverlay(data);
 
       fileNameEl.textContent = file.name;
       currentBaseName = file.name.replace(/\.[^.]+$/, "") || "export";

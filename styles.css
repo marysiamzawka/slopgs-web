@@ -164,6 +164,57 @@ button {
   display: block;
 }
 
+/* ---------------------------------------------------------- lyrics-overlay */
+
+/* A karaoke ticker for the minority of files that embed SMF Lyric events
+ * (see lyricLines in midi.js) -- current line centered, one line of context
+ * dimmed above and below. Lives in the piano roll's own dead space: the
+ * blank canvas band below the keyboard strike strip that pianoroll.js never
+ * draws into. top is that band's own top edge -- IMPACT_Y_FRACTION (0.82)
+ * and STRIKE_STRIP_PX (30) mirrored from that file's constants (see the
+ * comment there); .roll-canvas fills #rollWrap exactly, so percentages here
+ * land on the same pixels pianoroll.js computes them from. Hidden entirely
+ * (buildLyricsOverlay in app.js) for the overwhelming majority of files that
+ * carry no lyrics at all -- the space stays as blank as it's always been.
+ */
+.lyrics-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(82% + 30px);
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.2rem 1.25rem;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.lyrics-overlay__line {
+  margin: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.lyrics-overlay__line--current {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lyrics-overlay__line--prev,
+.lyrics-overlay__line--next {
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+
 /* --------------------------------------------------------------- dropzone */
 
 .dropzone {
