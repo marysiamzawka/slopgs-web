@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>slopgs player</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="titlebar">
+    <span class="titlebar__name">SLOPGS PLAYER</span>
+    <a class="titlebar__tag" href="https://github.com/sloptainment/slopgs" target="_blank" rel="noopener noreferrer" title="Synth engine: slopgs, an MSGS/swmidi.sys reimplementation">MSGS WAVETABLE SYNTH · GENERAL MIDI</a>
+  </header>
+
+  <main class="stage">
+    <section class="roll-wrap" id="rollWrap">
+      <canvas id="roll" class="roll-canvas" role="img" aria-label="Piano roll: falling notes for the loaded MIDI file, synced to playback"></canvas>
+
+      <div class="dropzone" id="dropzone">
+        <div class="dropzone__inner">
+          <p class="dropzone__title" id="dropzoneTitle">Drop a .mid file</p>
+          <p class="dropzone__hint" id="dropHint">Loading synth engine…</p>
+          <button type="button" id="browseBtn" class="linklike">browse a file instead</button>
+          <button type="button" id="forgetDlsBtn" class="linklike" hidden>or pick a different file</button>
+          <input type="file" id="fileInput" accept=".mid,.midi,audio/midi" hidden>
+          <p class="dropzone__demo">
+            <select id="demoSelect" class="linklike" aria-label="Try a demo song">
+              <option value="" selected>or try a demo song…</option>
+            </select>
+          </p>
+        </div>
+      </div>
+
+      <div class="dragover-overlay" id="dragOverlay" aria-hidden="true">
+        <p>Drop it</p>
+      </div>
+
+      <button type="button" class="autoplay-prompt" id="autoplayPrompt" hidden>
+        <svg class="autoplay-prompt__icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.5v13l11-6.5z"/></svg>
+        <span class="autoplay-prompt__label">Click to play</span>
+        <span class="autoplay-prompt__hint">the browser held playback until you interact</span>
+      </button>
+
+      <div class="loading-indicator" id="loadingIndicator" hidden aria-hidden="true">
+        <span class="loading-indicator__spinner"></span>
+        <span class="loading-indicator__label">Starting playback&hellip;</span>
+      </div>
+
+      <div class="status-banner" id="statusBanner" hidden></div>
+    </section>
+
+    <aside class="sidebar">
+      <div class="voice-meter" id="voiceMeter" hidden>
+        <div class="voice-meter__row">
+          <span class="voice-meter__label">Voices</span>
+          <span class="voice-meter__bar"><span class="voice-meter__fill" id="voiceMeterFill"></span></span>
+          <span class="voice-meter__value"><span id="voiceCount">0</span><span class="voice-meter__max"> / 54</span></span>
+        </div>
+        <div class="voice-meter__settings">
+          <label for="updateRateSelect" title="How often the voice meter (and audio scheduling) updates, per second. Higher = more responsive, more CPU/JS overhead. Lower = smoother-running, coarser updates. 60Hz matches the piano roll's own frame rate -- the fastest rate that's ever visually distinguishable.">Update rate</label>
+          <select id="updateRateSelect">
+            <option value="1">1 Hz</option>
+            <option value="2" selected>2 Hz</option>
+            <option value="5">5 Hz</option>
+            <option value="10">10 Hz</option>
+            <option value="20">20 Hz</option>
+            <option value="30">30 Hz</option>
+            <option value="60">60 Hz</option>
+          </select>
+        </div>
+        <div class="voice-meter__settings">
+          <label for="rollSpeedSelect" title="How fast notes fall down the piano roll toward the strike line. Faster shows less lead time before a note hits; slower shows more of what's coming.">Roll speed</label>
+          <select id="rollSpeedSelect">
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.5">1.5×</option>
+            <option value="2">2×</option>
+          </select>
+        </div>
+      </div>
+      <div class="sidebar__title">
+        <h2>Channels</h2>
+        <button type="button" id="resetMuteSoloBtn" class="sidebar__reset" disabled>Reset M/S</button>
+      </div>
+      <p class="sidebar__empty" id="sidebarEmpty">No file loaded yet.</p>
+      <ol class="channel-list" id="channelList"></ol>
+    </aside>
+  </main>
+
+  <div class="metabar" id="metabar" hidden>
+    <div class="metabar__info" id="metaInfo"></div>
+    <div class="metabar__marker" id="metaMarker" hidden>
+      <span class="metabar__marker-dot" aria-hidden="true"></span>
+      <span id="metaMarkerText"></span>
+    </div>
+  </div>
+
+  <footer class="transport" id="transport">
+    <button type="button" id="playBtn" class="transport__play" disabled aria-label="Play">
+      <svg class="icon-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.5v13l11-6.5z"/></svg>
+      <svg class="icon-pause" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.5h3.2v13H3zM9.8 1.5H13v13H9.8z"/></svg>
+    </button>
+
+    <div class="transport__time" id="timeElapsed">0:00</div>
+    <input type="range" id="seekBar" class="seekbar" min="0" max="1000" value="0" step="1" disabled aria-label="Seek">
+    <div class="transport__time" id="timeTotal">0:00</div>
+    <span class="seeking-pill" id="seekingPill" hidden>catching up&hellip;</span>
+
+    <div class="transport__bar" id="transportBar" hidden title="Current bar / total bars">
+      <span class="transport__bar-label">BAR</span>
+      <span id="barCounter">–/–</span>
+    </div>
+
+    <button type="button" id="loopBtn" class="transport__toggle" aria-pressed="false" disabled>LOOP</button>
+
+    <div class="volume">
+      <label for="volumeSlider" class="volume__label">VOL</label>
+      <input type="range" id="volumeSlider" class="volume__slider" min="0" max="100" value="80" aria-label="Volume">
+    </div>
+
+    <div class="export">
+      <select id="exportFormat" class="export__format" disabled aria-label="Export format">
+        <option value="wav">WAV</option>
+        <option value="mp3" selected>MP3 (160kbps)</option>
+        <option value="ogg">OGG Vorbis (q10)</option>
+      </select>
+      <button type="button" id="exportBtn" class="export__btn" disabled>Export</button>
+      <span class="export__status" id="exportStatus" hidden></span>
+    </div>
+
+    <div class="filename" id="fileName"></div>
+  </footer>
+</div>
+
+<script src="js/midi.js"></script>
+<script src="js/synth.js"></script>
+<script src="js/pianoroll.js"></script>
+<script src="js/export.js"></script>
+<script src="js/dls-store.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

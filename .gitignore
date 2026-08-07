@@ -1,0 +1,13 @@
+/vendor/
+/msgs.wasm
+/gm.dls
+
+# Local tool state -- editor/agent config, not project content.
+/.claude/
+/.cursor/
+/.impeccable/
+
+# Internal working notes for iterating with Claude -- not meant for a
+# public audience.
+/PRODUCT.md
+/OUTREACH.md

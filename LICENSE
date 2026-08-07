@@ -1,0 +1,43 @@
+MIT License
+
+Copyright (c) 2026 the slopgs-player contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+---
+
+## Scope
+
+This license covers the original code of this repository: the frontend
+(`index.html`, `styles.css`, `js/midi.js`, `js/synth.js`, `js/pianoroll.js`,
+`js/export.js`, `js/app.js`), `setup.sh`, and the GitHub Actions workflow.
+
+It does **not** cover, and makes no claim over:
+
+- **`msgs.wasm`** (built at deploy time from https://github.com/sloptainment/slopgs)
+  -- a separate project with its own, unresolved licensing status. See
+  README.md's "About the synth engine" section before reusing it elsewhere.
+- **`gm.dls`** -- never included in this repository or its deployments; each
+  user supplies their own, and it is never uploaded, stored, or redistributed
+  by this project.
+- **Vendored third-party code** in `js/vendor/` (lame.js, LGPL-3.0;
+  libvorbis.js, BSD/Xiph.org) -- see `js/vendor/README.md`.
+- **Fonts** in `fonts/` (IBM Plex Sans, Space Mono) -- both OFL-1.1, see
+  `fonts/NOTICE.md`.
+- **The demo MIDI files** in `demo/` -- CC BY-NC-SA 3.0, see `demo/CREDITS.md`.

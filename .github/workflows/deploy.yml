@@ -1,0 +1,66 @@
+name: Deploy to GitHub Pages
+
+# Builds msgs.wasm fresh from the pinned slopgs commit (see SLOPGS_COMMIT
+# and scripts/build-wasm.sh) on every push to main, and publishes it
+# alongside the static frontend. msgs.wasm is never committed to this
+# repo's own history -- this workflow is the only place it gets built,
+# same as scripts/build-wasm.sh does for local dev. gm.dls is never part
+# of this pipeline at all: every visitor supplies their own, in-browser,
+# same as running the site locally. See README's "About the synth engine"
+# section for why the commit pin matters here specifically.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+
+      - name: Install clang
+        run: |
+          command -v clang >/dev/null 2>&1 || sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Build msgs.wasm (pinned slopgs commit, unmodified)
+        run: ./scripts/build-wasm.sh
+
+      - name: Assemble site directory
+        run: |
+          mkdir -p _site
+          cp index.html styles.css msgs.wasm _site/
+          cp -r js fonts demo _site/
+          # Never part of the deploy -- confirms the workflow can't ship it
+          # even by accident if someone's local .gitignore slips.
+          rm -f _site/gm.dls
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

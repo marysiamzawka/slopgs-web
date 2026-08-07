@@ -1,0 +1,1115 @@
+/* styles.css -- dark DAW-chrome world: a Cakewalk/Cubase-era piano-roll
+ * editor, steered vertical (Synthesia-style falling notes) rather than the
+ * genre's usual horizontal scroll. Bevels read as recessed/raised hardware
+ * panel, never flat-SaaS cards; the amber strike line and note-blue accent
+ * are the only saturated color outside the per-channel note hues.
+ */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/ibm-plex-sans-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/space-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("fonts/space-mono-700.woff2") format("woff2");
+}
+
+:root {
+  --bg: #101216;
+  --panel: #1a1d22;
+  --panel-raised: #20242b;
+  --grid-line: #2a2e35;
+  --bevel-light: rgba(255, 255, 255, 0.09);
+  --bevel-dark: rgba(0, 0, 0, 0.55);
+  --text: #e7e9ec;
+  --text-dim: #a7afb8;
+  /* Same cool-slate hue as the old #6b7280, lightened to actually clear
+   * WCAG AA (4.5:1) on every surface it sits on -- the old value read as
+   * low as 3.2:1 against --panel-raised, which is a real failure, not just
+   * a stylistic "faint" choice, given how much small text uses this token. */
+  --text-faint: #8a90a0;
+  --blue: #4a90d9;
+  --blue-text: #75aee3;
+  --amber: #e8c547;
+  --danger: #e0705a;
+  --font-ui: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  overscroll-behavior: none;
+}
+
+body {
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+.app {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #000;
+  box-shadow: inset 0 0 0 1px var(--bevel-light);
+}
+
+/* -------------------------------------------------------------- titlebar */
+
+.titlebar {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(var(--panel-raised), var(--panel));
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 var(--bevel-light);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.titlebar__name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.14em;
+  color: var(--text);
+}
+
+.titlebar__tag {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  text-decoration: none;
+}
+.titlebar__tag:hover {
+  color: var(--amber);
+}
+.titlebar__tag:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ stage */
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.roll-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+}
+
+.roll-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* --------------------------------------------------------------- dropzone */
+
+.dropzone {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 18, 22, 0.82);
+  transition: opacity 0.25s ease;
+  pointer-events: auto;
+}
+
+.dropzone.is-loaded {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dropzone__inner {
+  text-align: center;
+  padding: 2rem 2.5rem;
+  border: 1px dashed var(--grid-line);
+  border-radius: 4px;
+  background: var(--panel);
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    inset 0 -1px 0 var(--bevel-dark);
+}
+
+.dropzone__title {
+  margin: 0 0 0.4rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.dropzone__hint {
+  margin: 0 0 0.9rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.dropzone__demo {
+  margin: 0.6rem 0 0;
+}
+
+/* A <select>'s closed-state box sizes to its widest <option> by default in
+ * most browsers, not to whatever's actually showing -- with a long title
+ * among the options this pulls the whole control wider than the dropzone
+ * and off-center. Clamp it and ellipsis the overflow instead. */
+#demoSelect {
+  display: inline-block;
+  max-width: 100%;
+  width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  vertical-align: top;
+}
+
+#forgetDlsBtn {
+  margin-left: 0.9rem;
+}
+
+.linklike {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--blue-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.linklike:hover {
+  color: var(--amber);
+}
+.linklike:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 3px;
+}
+
+.dragover-overlay {
+  position: absolute;
+  inset: 0.6rem;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--amber);
+  border-radius: 6px;
+  background: rgba(232, 197, 71, 0.08);
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--amber);
+  z-index: 5;
+}
+.dragover-overlay.is-active {
+  display: flex;
+}
+
+.autoplay-prompt {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  width: 100%;
+  border: none;
+  background: rgba(16, 18, 22, 0.88);
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+}
+/* The [hidden] attribute's UA-stylesheet display:none has the same (0,1,0)
+ * specificity as a single class selector; without scoping the flex display
+ * to the visible state, this rule loading after the UA sheet would win and
+ * the prompt would render regardless of the hidden attribute. */
+.autoplay-prompt:not([hidden]) {
+  display: flex;
+}
+
+.autoplay-prompt__icon {
+  width: 44px;
+  height: 44px;
+  padding: 14px 12px 14px 16px;
+  fill: #14161a;
+  background: var(--amber);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  transition: transform 0.12s ease;
+}
+.autoplay-prompt:hover .autoplay-prompt__icon {
+  transform: scale(1.06);
+}
+
+.autoplay-prompt__label {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.autoplay-prompt__hint {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.autoplay-prompt:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: -4px;
+}
+
+.loading-indicator {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  background: rgba(16, 18, 22, 0.88);
+  color: var(--text-dim);
+  pointer-events: none;
+}
+/* Same rule as .autoplay-prompt: scope the non-default display to the
+ * visible state, or it silently overrides the [hidden] attribute. */
+.loading-indicator:not([hidden]) {
+  display: flex;
+}
+
+.loading-indicator__spinner {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 3px solid var(--grid-line);
+  border-top-color: var(--amber);
+  animation: loading-spin 0.8s linear infinite;
+}
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-indicator__spinner {
+    animation: none;
+  }
+}
+
+.loading-indicator__label {
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
+.status-banner {
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 4;
+  padding: 0.7rem 0.9rem;
+  border-radius: 4px;
+  background: #2a1a18;
+  border: 1px solid #4a2822;
+  color: #f0b3a3;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  box-shadow: inset 0 1px 0 var(--bevel-light);
+}
+.status-banner[data-kind="setup"] {
+  background: #241f14;
+  border-color: #4a3f22;
+  color: #e8c98a;
+}
+
+/* --------------------------------------------------------------- metabar */
+
+/* Sits between the piano roll and the transport: whatever the MIDI file
+ * itself carries (song title, copyright, a free-text credit line, section
+ * markers) -- see midi.js's decodeMetaText. Collapses to nothing when a
+ * file has none of it, which is common; most of the corpus this was tuned
+ * against is either silent on all of it or just a copyright/credit line. */
+.metabar {
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 1rem;
+  background: var(--panel);
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 var(--bevel-light);
+  font-size: 0.78rem;
+  overflow: hidden;
+}
+/* Same [hidden]-vs-class-specificity issue as .autoplay-prompt/.loading-indicator above. */
+.metabar:not([hidden]) {
+  display: flex;
+}
+
+.metabar__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.metabar__info .metabar__title {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+.metabar__info .metabar__dim {
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.metabar__info .metabar__sep {
+  flex: none;
+  color: var(--text-faint);
+  opacity: 0.5;
+}
+
+.metabar__marker {
+  flex: none;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 40%;
+  padding: 0.15rem 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: #14161a;
+  background: var(--amber);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.metabar__marker:not([hidden]) {
+  display: flex;
+}
+.metabar__marker-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #14161a;
+  opacity: 0.55;
+}
+.metabar__marker span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------- sidebar */
+
+.sidebar {
+  flex: none;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid #000;
+  box-shadow: inset 1px 0 0 var(--bevel-light);
+  overflow-y: auto;
+}
+
+.voice-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.55rem 0.9rem;
+  background: var(--panel-raised);
+  border-bottom: 1px solid #000;
+  box-shadow: inset 0 1px 0 var(--bevel-light), inset 0 -1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.voice-meter__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.voice-meter__settings {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.voice-meter__settings label {
+  font-size: 0.64rem;
+  color: var(--text-faint);
+  cursor: help;
+}
+
+.voice-meter__settings select {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: none;
+  border-radius: 2px;
+  padding: 0.1rem 0.3rem;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+.voice-meter__settings select:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
+.voice-meter__label {
+  flex: none;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.voice-meter__bar {
+  flex: 1;
+  height: 8px;
+  min-width: 40px;
+  border-radius: 1px;
+  background: var(--bg);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.voice-meter__fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  clip-path: inset(0 100% 0 0);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--blue) 0 3px,
+    rgba(0, 0, 0, 0.55) 3px 4px
+  );
+  transition: clip-path 0.1s linear;
+}
+.voice-meter__fill.is-hot {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--amber) 0 3px,
+    rgba(0, 0, 0, 0.55) 3px 4px
+  );
+}
+
+.voice-meter__value {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text);
+}
+.voice-meter__max {
+  color: var(--text-faint);
+}
+
+.sidebar__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.9rem 0.5rem;
+  border-bottom: 1px solid var(--grid-line);
+}
+.sidebar__title h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+
+.sidebar__reset {
+  flex: none;
+  padding: 0.15rem 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  background: var(--panel-raised);
+  border: none;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 var(--bevel-light), inset 0 -1px 0 var(--bevel-dark);
+  cursor: pointer;
+}
+.sidebar__reset:hover:not(:disabled) {
+  color: var(--text);
+}
+.sidebar__reset:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.sidebar__reset:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+
+.sidebar__empty {
+  margin: 0;
+  padding: 1rem 0.9rem;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+
+.channel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+}
+
+.channel-row {
+  padding: 0.4rem 0.75rem 0.4rem 0.9rem;
+  border-bottom: 1px solid var(--grid-line);
+  opacity: 0.62;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.channel-row.is-active {
+  opacity: 1;
+  background: var(--panel-raised);
+}
+
+.channel-row.is-silenced {
+  opacity: 0.32;
+}
+
+.channel-row__main {
+  display: grid;
+  grid-template-columns: 8px 3.4rem 1fr 1.3rem 1.3rem;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.drum-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+  padding-left: calc(8px + 3.4rem + 0.45rem * 2);
+}
+
+/* Per-channel voice count, live -- concurrently-sounding notes on that
+ * channel right now, same idea as the sidebar's global VOICES meter but
+ * per row and coarse (small lit squares, not a number) so it reads at a
+ * glance without competing with the patch name for attention. Its own row
+ * below the name/mute/solo line, indented to align under the patch name
+ * (same convention as .drum-grid above) -- packed into that line as
+ * another column, it and a long patch name would clip each other. Skipped
+ * entirely for the drum channel, whose per-key grid already covers this. */
+.channel-row__voices {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 0.35rem;
+  padding-left: calc(8px + 3.4rem + 0.45rem * 2);
+}
+.voice-sq {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--bg);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6);
+}
+.voice-sq.is-lit {
+  background: var(--ch-color, var(--blue));
+  box-shadow: none;
+}
+.channel-row__voices-overflow {
+  margin-left: 1px;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--text-faint);
+}
+
+.drum-grid__chip {
+  flex: none;
+  padding: 0.12rem 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  background: var(--bg);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  transition: background-color 0.08s ease, color 0.08s ease;
+}
+
+.drum-grid__chip.is-active {
+  color: #14161a;
+  background: var(--amber);
+  box-shadow: none;
+}
+
+.channel-row__swatch {
+  position: relative;
+  width: 8px;
+  height: 18px;
+  border-radius: 1px;
+  background: var(--bg);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+/* Live channel-volume (CC7) level, bottom-anchored -- how full this bar
+ * reads is "how loud this channel's mixer fader currently is", refreshed
+ * every transport tick. clip-path avoids animating height/layout. */
+.channel-row__swatch-fill {
+  position: absolute;
+  inset: 0;
+  clip-path: inset(0% 0 0 0);
+  transition: clip-path 0.12s linear;
+}
+
+.channel-row__num {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.channel-row__patch {
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-row__btn {
+  flex: none;
+  width: 1.3rem;
+  height: 1.3rem;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text-faint);
+  background: var(--bg);
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    inset 0 -1px 0 var(--bevel-dark);
+  cursor: pointer;
+}
+.channel-row__btn:hover {
+  color: var(--text);
+}
+.channel-row__btn:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 1px;
+}
+.channel-row__btn--mute[aria-pressed="true"] {
+  color: #2a1210;
+  background: var(--danger);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.channel-row__btn--solo[aria-pressed="true"] {
+  color: #0f1a26;
+  background: var(--blue);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+/* ------------------------------------------------------------- transport */
+
+.transport {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(var(--panel-raised), var(--panel));
+  border-top: 1px solid #000;
+  box-shadow: inset 0 1px 0 var(--bevel-light);
+}
+
+.transport__play {
+  flex: none;
+  width: 2.2rem;
+  height: 2.2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  border: none;
+  background: var(--panel-raised);
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    inset 0 -2px 0 var(--bevel-dark),
+    0 1px 2px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+.transport__play:active:not(:disabled) {
+  box-shadow:
+    inset 0 -1px 0 var(--bevel-light),
+    inset 0 2px 2px var(--bevel-dark);
+}
+.transport__play:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.transport__play:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.transport__play svg {
+  width: 15px;
+  height: 15px;
+  fill: var(--text);
+}
+.transport__play .icon-pause {
+  display: none;
+}
+.transport__play.is-playing .icon-play {
+  display: none;
+}
+.transport__play.is-playing .icon-pause {
+  display: block;
+}
+
+.transport__time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  min-width: 2.6em;
+  text-align: center;
+}
+
+.seekbar,
+.volume__slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--grid-line);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+}
+.seekbar {
+  flex: 1;
+  min-width: 100px;
+}
+.seekbar:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.seekbar::-webkit-slider-thumb,
+.volume__slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+.seekbar::-moz-range-thumb,
+.volume__slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--blue);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+.seekbar:focus-visible,
+.volume__slider:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.transport__toggle {
+  flex: none;
+  height: 1.9rem;
+  padding: 0 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border: none;
+  border-radius: 3px;
+  background: var(--panel-raised);
+  color: var(--text-dim);
+  box-shadow:
+    inset 0 1px 0 var(--bevel-light),
+    inset 0 -2px 0 var(--bevel-dark);
+  cursor: pointer;
+}
+.transport__toggle[aria-pressed="true"] {
+  color: #14161a;
+  background: var(--amber);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.transport__toggle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.transport__toggle:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.seeking-pill {
+  flex: none;
+  padding: 0.15rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  color: #14161a;
+  background: var(--amber);
+  border-radius: 3px;
+  animation: seeking-pulse 1s ease-in-out infinite;
+}
+@keyframes seeking-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .seeking-pill {
+    animation: none;
+  }
+}
+
+.transport__bar {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding-left: 0.65rem;
+  border-left: 1px solid var(--grid-line);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+/* Same [hidden]-vs-class-specificity issue as elsewhere in this file. */
+.transport__bar:not([hidden]) {
+  display: flex;
+}
+.transport__bar-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.volume {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.volume__label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.volume__slider {
+  width: 70px;
+}
+
+.export {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-left: 0.65rem;
+  border-left: 1px solid var(--grid-line);
+}
+
+.export__format {
+  height: 1.9rem;
+  padding: 0 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  background: var(--panel-raised);
+  border: none;
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 var(--bevel-light), inset 0 -2px 0 var(--bevel-dark);
+}
+.export__format:disabled {
+  opacity: 0.4;
+}
+.export__format:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.export__btn {
+  height: 1.9rem;
+  padding: 0 0.7rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  background: var(--panel-raised);
+  border: none;
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 var(--bevel-light), inset 0 -2px 0 var(--bevel-dark);
+  cursor: pointer;
+}
+.export__btn:hover:not(:disabled) {
+  color: var(--text);
+}
+.export__btn:active:not(:disabled) {
+  box-shadow: inset 0 -1px 0 var(--bevel-light), inset 0 2px 2px var(--bevel-dark);
+}
+.export__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.export__btn:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.export__status {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.filename {
+  flex: none;
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--grid-line);
+}
+
+/* ------------------------------------------------------------- responsive */
+
+@media (max-width: 720px) {
+  .stage {
+    flex-direction: column;
+  }
+  .metabar {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+  .metabar__marker {
+    max-width: 100%;
+  }
+  .sidebar {
+    width: auto;
+    max-height: 30vh;
+    border-left: none;
+    border-top: 1px solid #000;
+    box-shadow: inset 0 1px 0 var(--bevel-light);
+  }
+  .transport {
+    flex-wrap: wrap;
+    row-gap: 0.5rem;
+  }
+  .filename {
+    order: 10;
+    max-width: none;
+    border-left: none;
+    padding-left: 0;
+    width: 100%;
+  }
+  .volume {
+    order: 9;
+  }
+  .export {
+    order: 8;
+    border-left: none;
+    padding-left: 0;
+  }
+  .transport__bar {
+    order: 7;
+    border-left: none;
+    padding-left: 0;
+  }
+
+  /* Touch targets: the dense desktop sizing (mute/solo ~21px, play ~35px)
+   * is fine for a mouse but under the ~44px floor touch needs to hit
+   * reliably. Bumped only at this breakpoint so the desktop cockpit
+   * density is untouched. */
+  .channel-row__main {
+    grid-template-columns: 8px 3.4rem 1fr 2.75rem 2.75rem;
+  }
+  .channel-row__btn {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+  .transport__play {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+}
