@@ -371,6 +371,18 @@
       const main = document.createElement("div");
       main.className = "channel-row__main";
 
+      // The dot/CH-num/mute/solo/expand controls stay a tight single-line
+      // grid; the patch name gets its own full-width line below instead of
+      // squeezed into a grid column between them (see .channel-row__main /
+      // .channel-row__main-top in styles.css) -- at the bigger font size the
+      // channel boxes now use, that leftover column was too narrow for a
+      // lot of real GM/GS names ("Electric Guitar (muted)", "CM-64/CM-32L
+      // Drum Kit") to fit before ellipsis kicked in. A full-width line below
+      // makes truncation the rare exception instead of the common case; the
+      // title attribute set below still covers that exception.
+      const mainTop = document.createElement("div");
+      mainTop.className = "channel-row__main-top";
+
       const dot = document.createElement("span");
       dot.className = "channel-row__dot";
       dot.style.background = channelSwatchColor(ch);
@@ -384,10 +396,17 @@
       num.className = "channel-row__num";
       num.textContent = `CH ${String(ch + 1).padStart(2, "0")}`;
 
-      const patch = document.createElement("span");
+      // Empty grid cell where the patch name used to live -- keeps the
+      // mute/solo/expand controls pinned to the same columns they always
+      // were without duplicating that grid's sizing elsewhere.
+      const spacer = document.createElement("span");
+      spacer.className = "channel-row__spacer";
+      spacer.setAttribute("aria-hidden", "true");
+
+      const patch = document.createElement("div");
       patch.className = "channel-row__patch";
       patch.textContent = gmInstrumentName(0, ch === 9);
-      patch.title = patch.textContent; // full name on hover -- bigger text (per the brief) means more names truncate
+      patch.title = patch.textContent; // full name on hover, for the rare name still too long for the full-width line
 
       const muteBtn = document.createElement("button");
       muteBtn.type = "button";
@@ -425,7 +444,8 @@
       expandBtn.setAttribute("aria-label", "Expand channel meters");
       expandBtn.addEventListener("click", () => setRowExpanded(li, !isRowExpanded(li)));
 
-      main.append(dot, num, patch, muteBtn, soloBtn, expandBtn);
+      mainTop.append(dot, num, spacer, muteBtn, soloBtn, expandBtn);
+      main.append(mainTop, patch);
       li.appendChild(main);
 
       // Live volume/pan/pitch. Pan and pitch fill from a center tick and
@@ -673,6 +693,37 @@
     }
   }
 
+  // Half-width, in percent of the bar, of the pitch thumb -- see
+  // setPitchMeter just below for why pitch gets a marker instead of a fill.
+  const PITCH_THUMB_HALF_PCT = 1.6;
+
+  /** Pan reads naturally as a fill growing from center -- more fill means
+   * more signal pulled to one side. Pitch bend has no such "amount of
+   * something" quality: it's a single value tracking where the wheel
+   * currently sits, so a fill outward from center misread as "how hard the
+   * bend is" (a magnitude) rather than "where the bend is right now" (a
+   * position). This instead clips the same always-full-size fill element
+   * down to a thin marker at that position -- still clip-path-only (see
+   * setBipolarMeter above for the layout-thrash reason), just a narrow slit
+   * that tracks the value instead of a region that grows with it. At rest
+   * it collapses into the bar's own center tick and shows "+0", same as
+   * setBipolarMeter's center-label handling. */
+  function setPitchMeter(row, value) {
+    const v = Math.max(-1, Math.min(1, value));
+    const fillEl = row.querySelector(".channel-row__pitch-fill");
+    const labelEl = row.querySelector(".channel-row__pitch-label");
+    if (Math.abs(v) < METER_CENTER_EPSILON) {
+      fillEl.style.clipPath = "inset(0 50% 0 50%)";
+      labelEl.textContent = "+0";
+      return;
+    }
+    labelEl.textContent = "";
+    const pos = 50 + v * 50; // 0 (full bend down) .. 100 (full bend up)
+    const left = Math.max(0, pos - PITCH_THUMB_HALF_PCT);
+    const right = Math.max(0, 100 - pos - PITCH_THUMB_HALF_PCT);
+    fillEl.style.clipPath = `inset(0 ${right}% 0 ${left}%)`;
+  }
+
   function updateChannelList(t) {
     for (const row of channelList.children) {
       const ch = Number(row.dataset.channel);
@@ -703,7 +754,7 @@
       setBipolarMeter(row, "pan", pan, "LR");
 
       const bend = valueAt(currentData.pitchBends.get(ch), t, { value: 0 }).value;
-      setBipolarMeter(row, "pitch", bend, "+0");
+      setPitchMeter(row, bend);
 
       if (ch === 9) {
         const grid = row.querySelector(".drum-grid");

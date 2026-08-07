@@ -802,21 +802,29 @@ button {
   opacity: 0.32;
 }
 
-/* The name/patch/mute/solo line gets its own lighter chip background --
+/* The name/patch/mute/solo block gets its own lighter chip background --
  * now that the meters and voice squares below use the row's full width
  * (see .channel-row__meter and .channel-row__voices just below) instead
  * of an indent that happened to line up with where the patch name starts,
  * that indent no longer does double duty as the visual seam between
  * "channel identity" and "live meters." The tint does that job explicitly
- * instead. */
+ * instead. Two lines stacked inside it: the dot/CH-num/mute/solo/expand
+ * controls (.channel-row__main-top, a tight single-line grid), then the
+ * patch name on its own full-width line below -- see .channel-row__patch's
+ * own comment for why that split exists. */
 .channel-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 3px;
+  background: var(--panel-raised);
+}
+.channel-row__main-top {
   display: grid;
   grid-template-columns: 10px 3.6rem 1fr 1.4rem 1.4rem 1.3rem;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.3rem 0.4rem;
-  border-radius: 3px;
-  background: var(--panel-raised);
 }
 
 .drum-grid {
@@ -927,7 +935,10 @@ button {
  * and animating clip-path here for the same reason: animating width/left
  * directly (this used to) forces a layout pass on every update, and with
  * up to three of these per channel row refreshing on every transport
- * poll, that's real layout thrash clip-path (paint/composite only) avoids. */
+ * poll, that's real layout thrash clip-path (paint/composite only) avoids.
+ * Volume and pan clip this down to a *region* (a level, a pull-to-one-side
+ * amount); pitch clips it down to a thin *marker* instead, since a bend has
+ * no such amount to show -- see setPitchMeter in app.js. */
 .channel-row__meter-fill {
   position: absolute;
   inset: 0;
@@ -1015,8 +1026,18 @@ button {
   color: var(--text-dim);
 }
 
+/* Its own full-width line rather than a grid column squeezed between the
+ * CH number and the mute/solo/expand controls -- see .channel-row__main's
+ * own comment. That's real room: at this font size a name like "Electric
+ * Guitar (muted)" or "CM-64/CM-32L Drum Kit" no longer reliably fits in a
+ * shared row, and shrinking the font back down to make it fit would undo
+ * the legibility pass those controls just got. Still capped to one line
+ * with an ellipsis (a wrapped second line would make row heights ragged
+ * across a list where most names *do* fit) -- the title attribute (set in
+ * app.js) covers the rare name that still doesn't. */
 .channel-row__patch {
   font-size: 0.95rem;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1380,7 +1401,7 @@ button {
    * is fine for a mouse but under the ~44px floor touch needs to hit
    * reliably. Bumped only at this breakpoint so the desktop cockpit
    * density is untouched. */
-  .channel-row__main {
+  .channel-row__main-top {
     grid-template-columns: 10px 3.6rem 1fr 2.75rem 2.75rem 2.75rem;
   }
   .channel-row__btn,
